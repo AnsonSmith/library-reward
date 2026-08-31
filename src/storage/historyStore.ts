@@ -6,7 +6,8 @@
  * at startup so a device that refuses to remember anything says so plainly rather
  * than silently starting a fresh school year every week.
  */
-import type { HistoryState, Settings } from '../domain/types';
+import { toMonthlyWin, type StoredWin } from './migrateWins';
+import type { HistoryState, Settings, WinRecord } from '../domain/types';
 
 const KEY = 'library-reward:history:v1';
 
@@ -23,6 +24,15 @@ export function defaultSettings(): Settings {
     lastBackupExportedOn: null,
     reduceMotion: false,
   };
+}
+
+/**
+ * Wins cached by the weekly version of this app carry a `weekKey` and no
+ * `monthKey`. Upgrading a Chromebook must not lose whose turn it is, so the
+ * month is recovered from the date the win was drawn (see ./migrateWins).
+ */
+function migrateWins(wins: unknown[]): WinRecord[] {
+  return (wins as StoredWin[]).map((w) => toMonthlyWin(w).win);
 }
 
 export function emptyHistory(): HistoryState {
@@ -54,7 +64,7 @@ export function loadHistory(): HistoryState {
     if (!raw) return emptyHistory();
     const parsed = JSON.parse(raw) as Partial<HistoryState>;
     return {
-      wins: Array.isArray(parsed.wins) ? parsed.wins : [],
+      wins: Array.isArray(parsed.wins) ? migrateWins(parsed.wins) : [],
       rounds: Array.isArray(parsed.rounds) ? parsed.rounds : [],
       settings: { ...defaultSettings(), ...(parsed.settings ?? {}) },
     };

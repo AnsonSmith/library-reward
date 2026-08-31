@@ -8,10 +8,17 @@
  * See contracts/backup-file.md.
  */
 import { rebuildRoundsFromWins } from '../domain/rounds';
+import { hasPeriod, toMonthlyWin, type StoredWin } from './migrateWins';
 import type { CalendarDate, HistoryState, RoundState, Settings, WinRecord } from '../domain/types';
 
 export const BACKUP_FORMAT = 'library-reward-history';
-export const BACKUP_VERSION = 1;
+/**
+ * v1 recorded a `weekKey` per win, from when drawings were weekly. v2 records a
+ * `monthKey`. A v1 file is still read: its wins are real turns that a class took,
+ * and turn-taking is derived from round + student, not from the period key, so a
+ * migrated file keeps whose-turn-it-is exactly right.
+ */
+export const BACKUP_VERSION = 2;
 
 export interface BackupFile {
   format: string;
@@ -23,7 +30,7 @@ export interface BackupFile {
 }
 
 export type ImportOutcome =
-  | { ok: true; history: HistoryState; roundsRebuilt: boolean }
+  | { ok: true; history: HistoryState; roundsRebuilt: boolean; migratedFromWeekly: boolean }
   | { ok: false; problem: string };
 
 export function backupFileName(schoolYearLabel: string): string {
@@ -46,7 +53,8 @@ export function serializeBackup(state: HistoryState, exportedOn: CalendarDate): 
   return JSON.stringify(buildBackup(state, exportedOn), null, 2);
 }
 
-function isWin(value: unknown): value is WinRecord {
+/** A win record from either format: v2 carries `monthKey`, v1 carried `weekKey`. */
+function isWin(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false;
   const w = value as Record<string, unknown>;
   return (
@@ -56,7 +64,7 @@ function isWin(value: unknown): value is WinRecord {
     typeof w.studentMatchKey === 'string' &&
     typeof w.studentName === 'string' &&
     typeof w.drawnOn === 'string' &&
-    typeof w.weekKey === 'string'
+    hasPeriod(w as StoredWin)
   );
 }
 
@@ -108,7 +116,9 @@ export function parseBackup(
   if (!Array.isArray(file.wins) || !file.wins.every(isWin)) {
     return { ok: false, problem: 'That backup file has a damaged list of winners; nothing was changed.' };
   }
-  const wins = file.wins as WinRecord[];
+  const converted = (file.wins as StoredWin[]).map(toMonthlyWin);
+  const wins = converted.map((c) => c.win);
+  const migratedFromWeekly = converted.some((c) => c.migrated);
 
   const rawRounds = Array.isArray(file.rounds) ? file.rounds : null;
   const roundsValid = rawRounds !== null && rawRounds.every(isRound);
@@ -139,6 +149,7 @@ export function parseBackup(
   return {
     ok: true,
     roundsRebuilt,
+    migratedFromWeekly,
     history: {
       wins,
       rounds,

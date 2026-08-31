@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Weekly homeroom prize drawing for an elementary school library",
+  "description": "Monthly homeroom prize drawing for an elementary school library",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/check-single-file.mjs",

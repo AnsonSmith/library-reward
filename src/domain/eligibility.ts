@@ -1,23 +1,29 @@
 /**
- * Who can win this week.
+ * Who can win this month.
  *
  * This module is the reason the app exists, and the one place where being wrong
- * is invisible until a child is embarrassed in front of a class. Two rules
- * matter most, both clarified with the librarian:
+ * is invisible until a child is embarrassed in front of a class. Three rules
+ * matter most, all clarified with the librarian:
  *
  *  1. Only a genuinely OVERDUE item disqualifies. Fines, lost-book charges, and
  *     refunds do not (FR-009).
- *  2. A student who already won in their homeroom's current round sits out until
+ *  2. A drawing covers a MONTH, and the month's weekly circulation reports are
+ *     pooled: an overdue item in ANY of them holds a student out of that month's
+ *     drawing, even if a later report shows the book returned. Returning it late
+ *     does not un-ring the bell for the month it was late in.
+ *  3. A student who already won in their homeroom's current round sits out until
  *     every classmate has had a turn (FR-016).
  *
  * Nothing is ever dropped silently: every roster row and every circulation row
- * ends up either in a homeroom or in a counted, displayable set-aside bucket.
+ * ends up either in a homeroom or in a counted, displayable set-aside bucket, and
+ * every set-aside circulation row names the report it came from.
  */
 import { isBefore } from '../parsing/excelDate';
 import { currentRoundFor, winnersInRound } from './rounds';
 import {
   NO_HOMEROOM,
   type CalendarDate,
+  type CirculationFileSummary,
   type CirculationRow,
   type Homeroom,
   type ImportSummary,
@@ -36,6 +42,11 @@ const CHECKOUT_LIKE = /overdue|checked\s*out|checkout|loan|on\s*loan/i;
  * A row disqualifies only when it carries a due date that has already passed.
  * A row that looks like a checkout but has no readable due date is reported as
  * undeterminable — never quietly treated as fine (FR-011).
+ *
+ * `today` is the drawing date, not each report's export date, which we are never
+ * told. That only ever widens the set of overdue rows, which is the safe
+ * direction: the failure that embarrasses the librarian is a student holding an
+ * overdue book winning a prize, not a student sitting one month out.
  */
 export function determineOverdue(row: CirculationRow, today: CalendarDate): OverdueVerdict {
   if (row.dueDate !== null) {
@@ -49,12 +60,14 @@ export function determineOverdue(row: CirculationRow, today: CalendarDate): Over
 
 export interface BuildInput {
   roster: RosterEntry[];
+  /** Every row from every circulation report in the month, each naming its file. */
   circulation: CirculationRow[];
+  /** The reports that were read, in order — including any that contributed no rows. */
+  circulationFileNames: string[];
   history: WinRecord[];
   rounds: RoundState[];
   today: CalendarDate;
   rosterFileName: string;
-  circulationFileName: string;
 }
 
 export interface BuildResult {
@@ -79,7 +92,7 @@ function homeroomNameOf(entry: RosterEntry): string {
 }
 
 export function buildHomerooms(input: BuildInput): BuildResult {
-  const { roster, circulation, history, rounds, today } = input;
+  const { roster, circulation, circulationFileNames, history, rounds, today } = input;
 
   const setAside: SetAsideRow[] = [];
   const counts = EMPTY_COUNTS();
@@ -89,17 +102,35 @@ export function buildHomerooms(input: BuildInput): BuildResult {
     barcode: string,
     detail: string | null,
     sourceRow: number,
+    sourceFile: string | null,
   ): void => {
     counts[reason] += 1;
-    setAside.push({ reason, displayName, barcode, detail, sourceRow });
+    setAside.push({ reason, displayName, barcode, detail, sourceRow, sourceFile });
   };
 
-  // --- Circulation: classify every row, then collect the disqualified students.
+  // --- Circulation: classify every row of every report, then take the UNION of
+  //     the students each one disqualifies.
   const overdueKeys = new Set<string>();
   const rosterKeys = new Set(roster.map((r) => r.matchKey).filter((k) => k !== ''));
+  const perFile = new Map<string, CirculationFileSummary>();
+  const fileOf = (fileName: string): CirculationFileSummary => {
+    let entry = perFile.get(fileName);
+    if (!entry) {
+      entry = { fileName, rowsRead: 0, overdueRowsFound: 0, studentsFirstBlockedHere: 0 };
+      perFile.set(fileName, entry);
+    }
+    return entry;
+  };
+  // Reports appear in the order they were read even when one contributed no rows,
+  // so a report exported empty by mistake is visible rather than absent.
+  for (const fileName of circulationFileNames) fileOf(fileName);
+
   let overdueRowsFound = 0;
 
   for (const row of circulation) {
+    const file = fileOf(row.sourceFile);
+    file.rowsRead += 1;
+
     if (row.matchKey === '' || !rosterKeys.has(row.matchKey)) {
       note(
         'unmatchedCirculation',
@@ -107,12 +138,17 @@ export function buildHomerooms(input: BuildInput): BuildResult {
         row.barcode,
         row.itemTitle ?? row.transactionType,
         row.sourceRow,
+        row.sourceFile,
       );
       continue;
     }
     const verdict = determineOverdue(row, today);
     if (verdict === 'overdue') {
       overdueRowsFound += 1;
+      file.overdueRowsFound += 1;
+      // Only the first report to catch a student is credited, so the per-report
+      // numbers add up to the total rather than double-counting a repeat offender.
+      if (!overdueKeys.has(row.matchKey)) file.studentsFirstBlockedHere += 1;
       overdueKeys.add(row.matchKey);
     } else if (verdict === 'undeterminable') {
       note(
@@ -121,6 +157,7 @@ export function buildHomerooms(input: BuildInput): BuildResult {
         row.barcode,
         `Due date reads "${row.dueDateRaw.trim() || '(blank)'}"${row.itemTitle ? ` — ${row.itemTitle}` : ''}`,
         row.sourceRow,
+        row.sourceFile,
       );
     } else {
       note(
@@ -129,6 +166,7 @@ export function buildHomerooms(input: BuildInput): BuildResult {
         row.barcode,
         row.fineReason ?? row.transactionType,
         row.sourceRow,
+        row.sourceFile,
       );
     }
   }
@@ -139,22 +177,29 @@ export function buildHomerooms(input: BuildInput): BuildResult {
 
   for (const entry of roster) {
     if (entry.matchKey === '') {
-      note('missingBarcode', entry.displayName, entry.barcode, null, entry.sourceRow);
+      note('missingBarcode', entry.displayName, entry.barcode, null, entry.sourceRow, null);
       continue;
     }
     if (entry.patronType !== 'Student') {
-      note('faculty', entry.displayName, entry.barcode, entry.patronType, entry.sourceRow);
+      note('faculty', entry.displayName, entry.barcode, entry.patronType, entry.sourceRow, null);
       continue;
     }
     if (entry.status !== 'Active') {
-      note('inactive', entry.displayName, entry.barcode, entry.status, entry.sourceRow);
+      note('inactive', entry.displayName, entry.barcode, entry.status, entry.sourceRow, null);
       continue;
     }
 
     const existing = byKey.get(entry.matchKey);
     if (existing) {
       // Keep the first active record; a second one is a duplicate either way.
-      note('duplicateRoster', entry.displayName, entry.barcode, 'Same barcode as an earlier row', entry.sourceRow);
+      note(
+        'duplicateRoster',
+        entry.displayName,
+        entry.barcode,
+        'Same barcode as an earlier row',
+        entry.sourceRow,
+        null,
+      );
       continue;
     }
     byKey.set(entry.matchKey, entry);
@@ -168,6 +213,7 @@ export function buildHomerooms(input: BuildInput): BuildResult {
         barcode: entry.barcode,
         detail: null,
         sourceRow: entry.sourceRow,
+        sourceFile: null,
       });
     }
     const bucket = grouped.get(name);
@@ -177,6 +223,7 @@ export function buildHomerooms(input: BuildInput): BuildResult {
 
   // --- Assemble homerooms, applying the overdue and turn-taking filters.
   const homerooms: Homeroom[] = [];
+  let studentsBlockedByOverdue = 0;
   for (const [name, students] of grouped) {
     const currentRound = currentRoundFor(name, rounds);
     const wonKeys = winnersInRound(name, currentRound, history);
@@ -190,6 +237,7 @@ export function buildHomerooms(input: BuildInput): BuildResult {
       else if (overdueKeys.has(s.matchKey)) blockedByOverdue.push(s);
       else candidates.push(s);
     }
+    studentsBlockedByOverdue += blockedByOverdue.length;
 
     homerooms.push({
       name,
@@ -212,11 +260,12 @@ export function buildHomerooms(input: BuildInput): BuildResult {
 
   const summary: ImportSummary = {
     rosterFileName: input.rosterFileName,
-    circulationFileName: input.circulationFileName,
+    circulationFiles: [...perFile.values()],
     importedAt: new Date().toISOString(),
     rosterRowsRead: roster.length,
     circulationRowsRead: circulation.length,
     overdueRowsFound,
+    studentsBlockedByOverdue,
     activeStudents: byKey.size,
     homeroomCount: homerooms.filter((h) => h.name !== NO_HOMEROOM).length,
     setAside,

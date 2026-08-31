@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFirstSheet } from '../../src/parsing/xlsxReader';
-import { identifyReport, pairReports } from '../../src/parsing/identifyReport';
+import { classifyReports, identifyReport } from '../../src/parsing/identifyReport';
 import {
   makeWorkbook,
   ROSTER_HEADERS,
@@ -39,48 +39,86 @@ describe('identifyReport', () => {
   });
 });
 
-describe('pairReports', () => {
-  it('assigns each file to its role', () => {
-    const paired = pairReports(
-      { rows: rosterSheet(), fileName: 'PatronNameListJob829811.xlsx' },
-      { rows: circSheet(), fileName: 'PatronCircReportJob829808.xlsx' },
-    );
-    expect(paired.ok).toBe(true);
-    if (!paired.ok) return;
-    expect(paired.roster.fileName).toBe('PatronNameListJob829811.xlsx');
-    expect(paired.circulation.fileName).toBe('PatronCircReportJob829808.xlsx');
-    expect(paired.swapped).toBe(false);
+describe('classifyReports', () => {
+  it('assigns each file to its role regardless of selection order', () => {
+    for (const order of [
+      [
+        { rows: rosterSheet(), fileName: 'PatronNameListJob829811.xlsx' },
+        { rows: circSheet(), fileName: 'PatronCircReportJob829808.xlsx' },
+      ],
+      [
+        { rows: circSheet(), fileName: 'PatronCircReportJob829808.xlsx' },
+        { rows: rosterSheet(), fileName: 'PatronNameListJob829811.xlsx' },
+      ],
+    ]) {
+      const sorted = classifyReports(order);
+      expect(sorted.ok).toBe(true);
+      if (!sorted.ok) return;
+      expect(sorted.roster.fileName).toBe('PatronNameListJob829811.xlsx');
+      expect(sorted.circulation.map((c) => c.fileName)).toEqual([
+        'PatronCircReportJob829808.xlsx',
+      ]);
+    }
   });
 
-  it('corrects a swapped selection and says so', () => {
-    const paired = pairReports(
-      { rows: circSheet(), fileName: 'PatronCircReportJob829808.xlsx' },
-      { rows: rosterSheet(), fileName: 'PatronNameListJob829811.xlsx' },
-    );
-    expect(paired.ok).toBe(true);
-    if (!paired.ok) return;
-    expect(paired.roster.fileName).toBe('PatronNameListJob829811.xlsx');
-    expect(paired.swapped).toBe(true);
+  it('takes a whole month of circulation reports alongside one roster', () => {
+    const sorted = classifyReports([
+      { rows: circSheet(), fileName: 'week1.xlsx' },
+      { rows: rosterSheet(), fileName: 'roster.xlsx' },
+      { rows: circSheet(), fileName: 'week2.xlsx' },
+      { rows: circSheet(), fileName: 'week3.xlsx' },
+      { rows: circSheet(), fileName: 'week4.xlsx' },
+    ]);
+    expect(sorted.ok).toBe(true);
+    if (!sorted.ok) return;
+    expect(sorted.roster.fileName).toBe('roster.xlsx');
+    // Order is the order they were selected in, so the summary reads predictably.
+    expect(sorted.circulation.map((c) => c.fileName)).toEqual([
+      'week1.xlsx',
+      'week2.xlsx',
+      'week3.xlsx',
+      'week4.xlsx',
+    ]);
   });
 
-  it('refuses two rosters, explaining what is missing', () => {
-    const paired = pairReports(
+  it('refuses two rosters, naming both', () => {
+    const sorted = classifyReports([
       { rows: rosterSheet(), fileName: 'a.xlsx' },
       { rows: rosterSheet(), fileName: 'b.xlsx' },
-    );
-    expect(paired.ok).toBe(false);
-    if (paired.ok) return;
-    expect(paired.problem).toMatch(/circulation|outstanding/i);
+      { rows: circSheet(), fileName: 'week1.xlsx' },
+    ]);
+    expect(sorted.ok).toBe(false);
+    if (sorted.ok) return;
+    expect(sorted.problem).toContain('a.xlsx');
+    expect(sorted.problem).toContain('b.xlsx');
+  });
+
+  it('refuses a pile with no roster in it', () => {
+    const sorted = classifyReports([
+      { rows: circSheet(), fileName: 'week1.xlsx' },
+      { rows: circSheet(), fileName: 'week2.xlsx' },
+    ]);
+    expect(sorted.ok).toBe(false);
+    if (sorted.ok) return;
+    expect(sorted.problem).toMatch(/roster/i);
+  });
+
+  it('refuses a roster with no circulation report to check it against', () => {
+    const sorted = classifyReports([{ rows: rosterSheet(), fileName: 'roster.xlsx' }]);
+    expect(sorted.ok).toBe(false);
+    if (sorted.ok) return;
+    expect(sorted.problem).toMatch(/circulation report/i);
   });
 
   it('refuses a file that is neither report, naming the file', () => {
     const other = readFirstSheet(makeWorkbook([['Widget'], ['Sprocket']]));
-    const paired = pairReports(
+    const sorted = classifyReports([
       { rows: rosterSheet(), fileName: 'roster.xlsx' },
+      { rows: circSheet(), fileName: 'week1.xlsx' },
       { rows: other, fileName: 'shopping-list.xlsx' },
-    );
-    expect(paired.ok).toBe(false);
-    if (paired.ok) return;
-    expect(paired.problem).toContain('shopping-list.xlsx');
+    ]);
+    expect(sorted.ok).toBe(false);
+    if (sorted.ok) return;
+    expect(sorted.problem).toContain('shopping-list.xlsx');
   });
 });

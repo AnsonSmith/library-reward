@@ -17,14 +17,17 @@ const CIRC = join(ROOT, 'PatronCircReportJob829808.xlsx');
 const available = existsSync(ROSTER) && existsSync(CIRC);
 
 describe.skipIf(!available)('the real reference exports', () => {
-  const run = () =>
-    ingestWorkbooks({
-      fileA: { fileName: 'PatronNameListJob829811.xlsx', bytes: new Uint8Array(readFileSync(ROSTER)) },
-      fileB: { fileName: 'PatronCircReportJob829808.xlsx', bytes: new Uint8Array(readFileSync(CIRC)) },
-      history: [],
-      rounds: [],
-      today: '2026-08-30',
-    });
+  const rosterFile = () => ({
+    fileName: 'PatronNameListJob829811.xlsx',
+    bytes: new Uint8Array(readFileSync(ROSTER)),
+  });
+  const circFile = (fileName = 'PatronCircReportJob829808.xlsx') => ({
+    fileName,
+    bytes: new Uint8Array(readFileSync(CIRC)),
+  });
+
+  const run = (files = [rosterFile(), circFile()]) =>
+    ingestWorkbooks({ files, history: [], rounds: [], today: '2026-08-30' });
 
   it('reads the roster into the expected shape', () => {
     const result = run();
@@ -41,7 +44,7 @@ describe.skipIf(!available)('the real reference exports', () => {
 
   it('finds no overdue items in this export, and says so rather than failing', () => {
     // Every row is "Unpaid Fines & Refunds" with an empty Due column, so under the
-    // clarified rule (overdue items only) this week disqualifies nobody.
+    // clarified rule (overdue items only) this report disqualifies nobody.
     const result = run();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -66,5 +69,26 @@ describe.skipIf(!available)('the real reference exports', () => {
     const unassigned = result.homerooms.find((h) => h.name === NO_HOMEROOM);
     expect(unassigned?.students).toHaveLength(7);
     expect(result.homerooms.at(-1)!.name).toBe(NO_HOMEROOM);
+  });
+
+  it('pools several reports without double-counting who sits out', () => {
+    // The same real export offered as three weeks of a month. Eligibility is a
+    // union over students, so repeating a report must not change who can win.
+    const one = run();
+    const three = run([
+      rosterFile(),
+      circFile('week1.xlsx'),
+      circFile('week2.xlsx'),
+      circFile('week3.xlsx'),
+    ]);
+    expect(one.ok && three.ok).toBe(true);
+    if (!one.ok || !three.ok) return;
+
+    expect(three.summary.circulationFiles).toHaveLength(3);
+    expect(three.summary.circulationRowsRead).toBe(one.summary.circulationRowsRead * 3);
+    expect(three.summary.studentsBlockedByOverdue).toBe(one.summary.studentsBlockedByOverdue);
+    expect(three.homerooms.map((h) => h.candidates.length)).toEqual(
+      one.homerooms.map((h) => h.candidates.length),
+    );
   });
 });

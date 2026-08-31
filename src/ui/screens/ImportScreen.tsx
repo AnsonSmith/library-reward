@@ -1,72 +1,115 @@
 /**
- * Choosing the week's two files.
+ * Choosing the month's files: one roster, and every weekly circulation report the
+ * month produced.
+ *
+ * Files accumulate across several trips to the file picker rather than replacing
+ * each other — a month's reports are often saved in different folders, and a
+ * picker that forgot the previous pick would make that a chore. Which file is
+ * which is worked out from its headers, so selection order carries no meaning.
  *
  * Plain <input type="file"> and File.arrayBuffer() — the File System Access API is
  * not dependable on a file:// origin, which is how this runs on a Chromebook
  * (research R2). File problems are stated in words a librarian can act on (FR-005).
  */
-import { useState } from 'react';
-import { ingestWorkbooks } from '../../parsing/ingest';
+import { useRef, useState } from 'react';
+import { ingestWorkbooks, type RecognizedFile } from '../../parsing/ingest';
 import { todayLocal } from '../../parsing/excelDate';
+import { monthLabelFor, monthKeyFor } from '../../domain/monthKey';
 import type { HistoryState } from '../../domain/types';
-import type { WeekSession } from '../../app/session';
+import type { DrawingSession } from '../../app/session';
 
 interface Props {
   history: HistoryState;
-  session: WeekSession | null;
-  onLoaded: (session: WeekSession) => void;
+  session: DrawingSession | null;
+  onLoaded: (session: DrawingSession) => void;
   onShowQuality: () => void;
   onContinue: () => void;
 }
 
-interface Picked {
+export interface Picked {
   name: string;
+  size: number;
   bytes: Uint8Array;
 }
 
+/**
+ * Add a fresh pick to what is already chosen, ignoring anything already there.
+ *
+ * The same report added twice would double every count on the summary screen
+ * without changing who can win, which reads as a bug either way. Name and size
+ * together are the identity: two exports genuinely from different weeks differ in
+ * one or the other, and re-picking the same file from the same folder does not.
+ */
+export function mergePicked(current: Picked[], incoming: Picked[]): Picked[] {
+  const seen = new Set(current.map((f) => `${f.name}:${f.size}`));
+  const added: Picked[] = [];
+  for (const file of incoming) {
+    const id = `${file.name}:${file.size}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    added.push(file);
+  }
+  return added.length === 0 ? current : [...current, ...added];
+}
+
 export function ImportScreen({ history, session, onLoaded, onShowQuality, onContinue }: Props) {
-  const [fileA, setFileA] = useState<Picked | null>(null);
-  const [fileB, setFileB] = useState<Picked | null>(null);
+  const [picked, setPicked] = useState<Picked[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [swapped, setSwapped] = useState(false);
+  const [recognized, setRecognized] = useState<RecognizedFile[] | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const pick = (which: 'a' | 'b') => async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const monthLabel = monthLabelFor(monthKeyFor(todayLocal()));
+
+  const add = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const chosen = [...(event.target.files ?? [])];
+    // Clear the input straight away, so picking the same file again still fires.
+    if (inputRef.current) inputRef.current.value = '';
+    if (chosen.length === 0) return;
     setProblem(null);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const picked = { name: file.name, bytes };
-    if (which === 'a') setFileA(picked);
-    else setFileB(picked);
+
+    const loaded: Picked[] = await Promise.all(
+      chosen.map(async (file) => ({
+        name: file.name,
+        size: file.size,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      })),
+    );
+
+    setPicked((current) => mergePicked(current, loaded));
+  };
+
+  const remove = (name: string, size: number): void => {
+    setPicked((current) => current.filter((f) => !(f.name === name && f.size === size)));
+    setProblem(null);
   };
 
   const load = (): void => {
-    if (!fileA || !fileB) return;
+    if (picked.length < 2) return;
     setBusy(true);
     setProblem(null);
     try {
+      const today = todayLocal();
       const result = ingestWorkbooks({
-        fileA: { fileName: fileA.name, bytes: fileA.bytes },
-        fileB: { fileName: fileB.name, bytes: fileB.bytes },
+        files: picked.map((f) => ({ fileName: f.name, bytes: f.bytes })),
         history: history.wins,
         rounds: history.rounds,
-        today: todayLocal(),
+        today,
       });
 
       if (!result.ok) {
         setProblem(result.problem);
+        setRecognized(null);
         return;
       }
 
-      setSwapped(result.swapped);
+      setRecognized(result.recognized);
       onLoaded({
         roster: result.roster,
         circulation: result.circulation,
         rosterFileName: result.summary.rosterFileName,
-        circulationFileName: result.summary.circulationFileName,
-        today: todayLocal(),
-        swapped: result.swapped,
+        circulationFileNames: result.circulationFileNames,
+        today,
         homerooms: result.homerooms,
         summary: result.summary,
       });
@@ -82,37 +125,61 @@ export function ImportScreen({ history, session, onLoaded, onShowQuality, onCont
   };
 
   const summary = session?.summary;
+  const emptyReports = summary?.circulationFiles.filter((f) => f.rowsRead === 0) ?? [];
 
   return (
     <div className="stack">
       <div>
-        <h2>This week's two files</h2>
+        <h2>This month's files</h2>
         <p className="lede">
-          Choose the two spreadsheets you exported from the library system. It does not matter which
-          order you pick them in, and nothing you choose leaves this Chromebook.
+          Choose the student roster, plus every weekly circulation report from{' '}
+          {monthLabel}. A student with an overdue book in <strong>any</strong> of those
+          reports sits out this month's drawing. It does not matter which order you pick
+          them in, and nothing you choose leaves this Chromebook.
         </p>
       </div>
 
-      <div className="row">
-        <label className="filepick">
-          <strong>First file</strong>
-          <span className="hint">The student roster, or the circulation report</span>
-          <input type="file" accept=".xlsx" onChange={pick('a')} />
-          {fileA && <span className="chosen">{fileA.name}</span>}
-        </label>
+      <label className="filepick">
+        <strong>Add files</strong>
+        <span className="hint">
+          The roster, and one report per week. You can add them a few at a time.
+        </span>
+        <input ref={inputRef} type="file" accept=".xlsx" multiple onChange={add} />
+      </label>
 
-        <label className="filepick">
-          <strong>Second file</strong>
-          <span className="hint">Whichever one you haven't picked yet</span>
-          <input type="file" accept=".xlsx" onChange={pick('b')} />
-          {fileB && <span className="chosen">{fileB.name}</span>}
-        </label>
-      </div>
+      {picked.length > 0 && (
+        <div className="card stack">
+          <h3 style={{ margin: 0 }}>
+            {picked.length} file{picked.length === 1 ? '' : 's'} chosen
+          </h3>
+          <ul className="namelist small">
+            {picked.map((file) => (
+              <li key={`${file.name}:${file.size}`}>
+                <span className="row" style={{ gap: '0.5rem' }}>
+                  <span>{file.name}</span>
+                  <button
+                    className="ghost small"
+                    onClick={() => remove(file.name, file.size)}
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    Remove
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="row">
-        <button className="primary big" onClick={load} disabled={!fileA || !fileB || busy}>
+        <button className="primary big" onClick={load} disabled={picked.length < 2 || busy}>
           {busy ? 'Reading…' : 'Read these files'}
         </button>
+        {picked.length === 1 && (
+          <span className="muted small">
+            One more to go — a roster on its own cannot tell us who has an overdue book.
+          </span>
+        )}
       </div>
 
       {problem && (
@@ -124,9 +191,16 @@ export function ImportScreen({ history, session, onLoaded, onShowQuality, onCont
 
       {summary && (
         <div className="stack">
-          {swapped && (
+          {recognized && (
             <div className="notice">
-              Those two were the other way round, so they have been swapped for you.
+              <h3>What each file turned out to be</h3>
+              <ul className="namelist small">
+                {recognized.map((file) => (
+                  <li key={file.fileName}>
+                    {file.fileName} — {file.role === 'roster' ? 'student roster' : 'circulation report'}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -142,27 +216,73 @@ export function ImportScreen({ history, session, onLoaded, onShowQuality, onCont
                 <span className="k">homerooms</span>
               </li>
               <li>
-                <span className="n">{summary.circulationRowsRead}</span>
-                <span className="k">circulation rows</span>
+                <span className="n">{summary.circulationFiles.length}</span>
+                <span className="k">circulation reports</span>
               </li>
               <li>
                 <span className="n">{summary.overdueRowsFound}</span>
                 <span className="k">overdue items</span>
               </li>
+              <li>
+                <span className="n">{summary.studentsBlockedByOverdue}</span>
+                <span className="k">students sitting out</span>
+              </li>
             </ul>
 
             <p className="small muted" style={{ margin: 0 }}>
-              Roster: <strong>{summary.rosterFileName}</strong> · Circulation:{' '}
-              <strong>{summary.circulationFileName}</strong>
+              Roster: <strong>{summary.rosterFileName}</strong>
             </p>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Circulation report</th>
+                  <th>Rows</th>
+                  <th>Overdue</th>
+                  <th>Students it caught first</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.circulationFiles.map((file) => (
+                  <tr key={file.fileName}>
+                    <td className="small">{file.fileName}</td>
+                    <td className="small">{file.rowsRead}</td>
+                    <td className="small">{file.overdueRowsFound}</td>
+                    <td className="small">{file.studentsFirstBlockedHere}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="small muted" style={{ margin: 0 }}>
+              A student caught by an earlier report is only counted once, so the last column
+              adds up to the {summary.studentsBlockedByOverdue} sitting out.
+            </p>
+
+            {emptyReports.length > 0 && (
+              <div className="notice problem">
+                <h3>
+                  {emptyReports.length === 1
+                    ? 'One report had no rows in it'
+                    : `${emptyReports.length} reports had no rows in them`}
+                </h3>
+                <p>
+                  {emptyReports.map((f) => f.fileName).join(', ')} had a header row and nothing
+                  else. If that week really had no circulation activity this is fine — otherwise
+                  the export may have gone wrong, and that week's overdue books are not being
+                  counted.
+                </p>
+              </div>
+            )}
 
             {summary.overdueRowsFound === 0 && (
               <div className="notice">
-                <h3>No overdue items in this report</h3>
+                <h3>No overdue items in any of these reports</h3>
                 <p>
-                  Nobody is being kept out of the drawing this week. That's good news if everyone has
-                  returned their books — but if that seems unlikely, the circulation report may have
-                  been exported without checked-out items and their due dates.
+                  Nobody is being kept out of this month's drawing. That's good news if everyone
+                  has returned their books — but if that seems unlikely across{' '}
+                  {summary.circulationFiles.length} report
+                  {summary.circulationFiles.length === 1 ? '' : 's'}, they may have been exported
+                  without checked-out items and their due dates.
                 </p>
               </div>
             )}

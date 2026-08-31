@@ -1,5 +1,5 @@
 /**
- * The week in memory.
+ * The month in memory.
  *
  * Roster and circulation rows live here and ONLY here — they are never written to
  * storage (FR-040, research R10). Only winner history persists. Homerooms are
@@ -8,7 +8,7 @@
  */
 import { buildHomerooms } from '../domain/eligibility';
 import { advanceRoundsIfComplete } from '../domain/rounds';
-import { weekKeyFor } from '../domain/weekKey';
+import { monthKeyFor } from '../domain/monthKey';
 import type {
   CalendarDate,
   CirculationRow,
@@ -19,27 +19,27 @@ import type {
   WinRecord,
 } from '../domain/types';
 
-export interface WeekSession {
+export interface DrawingSession {
   roster: RosterEntry[];
+  /** Every row from every circulation report chosen for this month, pooled. */
   circulation: CirculationRow[];
   rosterFileName: string;
-  circulationFileName: string;
+  circulationFileNames: string[];
   today: CalendarDate;
-  swapped: boolean;
   homerooms: Homeroom[];
   summary: ImportSummary;
 }
 
 /** Recompute homerooms against the current history. Cheap enough to run after every draw. */
-export function rederive(session: WeekSession, history: HistoryState): WeekSession {
+export function rederive(session: DrawingSession, history: HistoryState): DrawingSession {
   const { homerooms, summary } = buildHomerooms({
     roster: session.roster,
     circulation: session.circulation,
+    circulationFileNames: session.circulationFileNames,
     history: history.wins,
     rounds: history.rounds,
     today: session.today,
     rosterFileName: session.rosterFileName,
-    circulationFileName: session.circulationFileName,
   });
   return { ...session, homerooms, summary };
 }
@@ -52,7 +52,7 @@ export function makeWinId(): string {
 
 export interface RecordWinInput {
   history: HistoryState;
-  session: WeekSession;
+  session: DrawingSession;
   homeroom: Homeroom;
   winner: RosterEntry;
   /** When re-drawing, the record being replaced is removed first (FR-034). */
@@ -63,19 +63,19 @@ export interface RecordWinInput {
  * Append a win, then advance any homeroom that has just completed its round.
  * Returns fresh history plus a re-derived session.
  */
-export function recordWin(input: RecordWinInput): { history: HistoryState; session: WeekSession } {
+export function recordWin(input: RecordWinInput): { history: HistoryState; session: DrawingSession } {
   const { session, homeroom, winner, replacing } = input;
 
-  const weekKey = weekKeyFor(session.today);
+  const monthKey = monthKeyFor(session.today);
 
   // Two invariants, enforced here rather than trusted to the caller:
-  //   - one winner per homeroom per week (a replacement is explicit, FR-034)
+  //   - one winner per homeroom per month (a replacement is explicit, FR-034)
   //   - one turn per student per homeroom per round (FR-016)
   // Dropping a stale record silently would be wrong, so the UI confirms first;
   // this filter is what makes the confirmation actually take effect.
   const keptWins = input.history.wins.filter((w) => {
     if (replacing && w.id === replacing.id) return false;
-    if (w.homeroom === homeroom.name && w.weekKey === weekKey) return false;
+    if (w.homeroom === homeroom.name && w.monthKey === monthKey) return false;
     if (
       w.homeroom === homeroom.name &&
       w.round === homeroom.currentRound &&
@@ -93,7 +93,7 @@ export function recordWin(input: RecordWinInput): { history: HistoryState; sessi
     studentMatchKey: winner.matchKey,
     studentName: winner.displayName,
     drawnOn: session.today,
-    weekKey,
+    monthKey,
     candidatePoolSize: homeroom.candidates.length,
   };
 
@@ -113,23 +113,21 @@ export function recordWin(input: RecordWinInput): { history: HistoryState; sessi
 /** Remove a recorded win, returning that student to the pool (FR-023). */
 export function removeWin(
   history: HistoryState,
-  session: WeekSession | null,
+  session: DrawingSession | null,
   winId: string,
-): { history: HistoryState; session: WeekSession | null } {
+): { history: HistoryState; session: DrawingSession | null } {
   const next: HistoryState = { ...history, wins: history.wins.filter((w) => w.id !== winId) };
   return { history: next, session: session ? rederive(session, next) : null };
 }
 
-export function winsForWeek(history: HistoryState, weekKey: string): WinRecord[] {
-  return history.wins.filter((w) => w.weekKey === weekKey);
+export function winsForMonth(history: HistoryState, monthKey: string): WinRecord[] {
+  return history.wins.filter((w) => w.monthKey === monthKey);
 }
 
-export function winForHomeroomThisWeek(
+export function winForHomeroomThisMonth(
   history: HistoryState,
   homeroomName: string,
-  weekKey: string,
+  monthKey: string,
 ): WinRecord | null {
-  return (
-    history.wins.find((w) => w.homeroom === homeroomName && w.weekKey === weekKey) ?? null
-  );
+  return history.wins.find((w) => w.homeroom === homeroomName && w.monthKey === monthKey) ?? null;
 }

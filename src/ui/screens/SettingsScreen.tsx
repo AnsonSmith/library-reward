@@ -6,6 +6,7 @@
  * whose-turn-it-is (research R2, contracts/backup-file.md).
  */
 import { useRef, useState } from 'react';
+import { monthLabelFor } from '../../domain/monthKey';
 import type { HistoryState, StorageHealthView } from '../../app/appTypes';
 
 interface Props {
@@ -51,7 +52,7 @@ export function SettingsScreen(props: Props) {
           <p>{storage.reason}</p>
           <p>
             Save the backup file at the end of every session and load it again at the start, or your
-            turn-taking will start over each week.
+            turn-taking will start over each month.
           </p>
         </div>
       )}
@@ -201,7 +202,7 @@ export function SettingsScreen(props: Props) {
           <table>
             <thead>
               <tr>
-                <th>Week</th>
+                <th>Month</th>
                 <th>Homeroom</th>
                 <th>Winner</th>
                 <th>Round</th>
@@ -213,7 +214,7 @@ export function SettingsScreen(props: Props) {
                 .sort((a, b) => b.drawnOn.localeCompare(a.drawnOn))
                 .map((win) => (
                   <tr key={win.id}>
-                    <td className="small">{win.weekKey}</td>
+                    <td className="small">{monthLabelFor(win.monthKey)}</td>
                     <td>{win.homeroom}</td>
                     <td>{win.studentName}</td>
                     <td className="small">{win.round}</td>

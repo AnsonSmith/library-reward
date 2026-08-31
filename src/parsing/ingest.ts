@@ -1,9 +1,9 @@
 /**
- * One call from two chosen files to this week's homerooms.
+ * One call from the month's chosen files to its homerooms.
  * Kept out of the UI so the whole ingestion path is testable without a browser.
  */
 import { readFirstSheet, SpreadsheetReadError } from './xlsxReader';
-import { pairReports } from './identifyReport';
+import { classifyReports } from './identifyReport';
 import { parseRoster } from './rosterReport';
 import { parseCirculation } from './circulationReport';
 import { buildHomerooms, type BuildResult } from '../domain/eligibility';
@@ -21,27 +21,42 @@ export interface FileInput {
 }
 
 export interface IngestInput {
-  fileA: FileInput;
-  fileB: FileInput;
+  /** One roster plus one or more circulation reports, in any order. */
+  files: FileInput[];
   history: WinRecord[];
   rounds: RoundState[];
   today: CalendarDate;
 }
 
+/** What each chosen file turned out to be, so nothing is sorted invisibly. */
+export interface RecognizedFile {
+  fileName: string;
+  role: 'roster' | 'circulation';
+}
+
 export type IngestResult =
   | (BuildResult & {
       ok: true;
-      swapped: boolean;
+      recognized: RecognizedFile[];
       /** Kept so homerooms can be re-derived after each draw without re-reading files. */
       roster: RosterEntry[];
       circulation: CirculationRow[];
+      circulationFileNames: string[];
     })
   | { ok: false; problem: string };
 
 export function ingestWorkbooks(input: IngestInput): IngestResult {
+  if (input.files.length < 2) {
+    return {
+      ok: false,
+      problem:
+        'Choose the student roster and at least one circulation report before reading the files.',
+    };
+  }
+
   const sheets: { rows: ReturnType<typeof readFirstSheet>; fileName: string }[] = [];
 
-  for (const file of [input.fileA, input.fileB]) {
+  for (const file of input.files) {
     try {
       sheets.push({ rows: readFirstSheet(file.bytes), fileName: file.fileName });
     } catch (err) {
@@ -50,21 +65,31 @@ export function ingestWorkbooks(input: IngestInput): IngestResult {
     }
   }
 
-  const paired = pairReports(sheets[0]!, sheets[1]!);
-  if (!paired.ok) return paired;
+  const sorted = classifyReports(sheets);
+  if (!sorted.ok) return sorted;
 
-  const roster = parseRoster(paired.roster.rows, paired.roster.map);
-  const circulation = parseCirculation(paired.circulation.rows, paired.circulation.map);
+  const roster = parseRoster(sorted.roster.rows, sorted.roster.map);
+  // Every report's rows go into one pool; buildHomerooms takes the union of the
+  // students they disqualify, and keeps the per-report counts for display.
+  const circulation = sorted.circulation.flatMap((c) =>
+    parseCirculation(c.rows, c.map, c.fileName),
+  );
+  const circulationFileNames = sorted.circulation.map((c) => c.fileName);
 
   const built = buildHomerooms({
     roster,
     circulation,
+    circulationFileNames,
     history: input.history,
     rounds: input.rounds,
     today: input.today,
-    rosterFileName: paired.roster.fileName,
-    circulationFileName: paired.circulation.fileName,
+    rosterFileName: sorted.roster.fileName,
   });
 
-  return { ok: true, swapped: paired.swapped, roster, circulation, ...built };
+  const recognized: RecognizedFile[] = [
+    { fileName: sorted.roster.fileName, role: 'roster' },
+    ...circulationFileNames.map((fileName) => ({ fileName, role: 'circulation' as const })),
+  ];
+
+  return { ok: true, recognized, roster, circulation, circulationFileNames, ...built };
 }

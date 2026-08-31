@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { recordWin, rederive, removeWin, winForHomeroomThisWeek, winsForWeek } from '../../src/app/session';
-import type { WeekSession } from '../../src/app/session';
+import {
+  recordWin,
+  rederive,
+  removeWin,
+  winForHomeroomThisMonth,
+  winsForMonth,
+} from '../../src/app/session';
+import type { DrawingSession } from '../../src/app/session';
 import { buildHomerooms } from '../../src/domain/eligibility';
 import { currentRoundFor } from '../../src/domain/rounds';
 import { defaultSettings } from '../../src/storage/historyStore';
 import type { HistoryState, RosterEntry } from '../../src/domain/types';
 
-const TODAY = '2026-09-07'; // a Monday
-const WEEK = '2026-W37';
+const TODAY = '2026-09-07';
+const MONTH = '2026-09';
 const HOMEROOM = 'Marigold, Rita';
 
 function students(n: number): RosterEntry[] {
@@ -23,23 +29,22 @@ function students(n: number): RosterEntry[] {
   }));
 }
 
-function makeSession(roster: RosterEntry[], history: HistoryState): WeekSession {
-  const base: WeekSession = {
+function makeSession(roster: RosterEntry[], history: HistoryState): DrawingSession {
+  const base: DrawingSession = {
     roster,
     circulation: [],
     rosterFileName: 'roster.xlsx',
-    circulationFileName: 'circ.xlsx',
+    circulationFileNames: ['circ.xlsx'],
     today: TODAY,
-    swapped: false,
     homerooms: [],
     summary: buildHomerooms({
       roster,
       circulation: [],
+      circulationFileNames: ['circ.xlsx'],
       history: history.wins,
       rounds: history.rounds,
       today: TODAY,
       rosterFileName: 'roster.xlsx',
-      circulationFileName: 'circ.xlsx',
     }).summary,
   };
   return rederive(base, history);
@@ -67,7 +72,7 @@ describe('recording a win', () => {
     expect(win.studentMatchKey).toBe(roster[1]!.matchKey);
     expect(win.studentName).toBe(roster[1]!.displayName);
     expect(win.round).toBe(1);
-    expect(win.weekKey).toBe(WEEK);
+    expect(win.monthKey).toBe(MONTH);
     expect(win.drawnOn).toBe(TODAY);
     expect(win.candidatePoolSize).toBe(4);
     expect(win.id).toMatch(/^w_/);
@@ -89,7 +94,7 @@ describe('recording a win', () => {
     expect(homeroom.turnsRemaining).toBe(2);
   });
 
-  it('keeps at most one winner per homeroom per week', () => {
+  it('keeps at most one winner per homeroom per month', () => {
     const roster = students(4);
     let history = emptyState();
     let session = makeSession(roster, history);
@@ -101,8 +106,8 @@ describe('recording a win', () => {
     // A re-draw without naming what it replaces must still not leave two winners.
     const second = recordWin({ history, session, homeroom: session.homerooms[0]!, winner: roster[1]! });
 
-    expect(winsForWeek(second.history, WEEK)).toHaveLength(1);
-    expect(winForHomeroomThisWeek(second.history, HOMEROOM, WEEK)?.studentName).toBe(
+    expect(winsForMonth(second.history, MONTH)).toHaveLength(1);
+    expect(winForHomeroomThisMonth(second.history, HOMEROOM, MONTH)?.studentName).toBe(
       roster[1]!.displayName,
     );
   });
@@ -138,10 +143,10 @@ describe('recording a win', () => {
     history = first.history;
     session = first.session;
 
-    // Same student, a different week, same round — the invariant still holds.
+    // Same student, a different month, same round — the invariant still holds.
     const second = recordWin({
       history,
-      session: { ...session, today: '2026-09-14' },
+      session: { ...session, today: '2026-10-05' },
       homeroom: session.homerooms[0]!,
       winner: roster[0]!,
     });
@@ -160,7 +165,7 @@ describe('recording a win', () => {
     for (const [i, student] of roster.entries()) {
       const result = recordWin({
         history,
-        session: { ...session, today: i === 0 ? TODAY : '2026-09-14' },
+        session: { ...session, today: i === 0 ? TODAY : '2026-10-05' },
         homeroom: session.homerooms[0]!,
         winner: student,
       });

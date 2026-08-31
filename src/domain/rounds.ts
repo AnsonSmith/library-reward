@@ -42,7 +42,7 @@ export interface AdvanceInput {
 
 /**
  * Start a new round for any homeroom where every CURRENTLY ROSTERED student has
- * had a turn. Evaluated against this week's roster, so departed students never
+ * had a turn. Evaluated against this month's roster, so departed students never
  * hold a class hostage. Idempotent: calling it twice advances at most once.
  */
 export function advanceRoundsIfComplete(input: AdvanceInput): RoundState[] {

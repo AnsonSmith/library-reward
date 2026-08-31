@@ -4,6 +4,7 @@ import type { CirculationRow } from '../../src/domain/types';
 
 function row(over: Partial<CirculationRow> = {}): CirculationRow {
   return {
+    sourceFile: 'circ.xlsx',
     displayName: 'Doe, Jane',
     barcode: '000100001',
     matchKey: '100001',

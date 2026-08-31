@@ -45,7 +45,7 @@ function win(homeroomName: string, key: string, round = 1): WinRecord {
     studentMatchKey: key,
     studentName: `Student ${key}`,
     drawnOn: '2026-02-01',
-    weekKey: '2026-W05',
+    monthKey: '2026-02',
     candidatePoolSize: 3,
   };
 }
@@ -113,7 +113,7 @@ describe('round advancement', () => {
 describe('roster churn', () => {
   it('lets a student who joins mid-year be drawn immediately', () => {
     // FR-021: no win at the current round means eligible, with no special case.
-    const hr = homeroom('Marigold, Rita', ['1', '2', '3']); // '3' is new this week
+    const hr = homeroom('Marigold, Rita', ['1', '2', '3']); // '3' is new this month
     const history = ['1', '2'].map((k) => win('Marigold, Rita', k));
     expect(winnersInRound('Marigold, Rita', 1, history).has('3')).toBe(false);
     expect(turnsRemaining(hr, history)).toBe(1);

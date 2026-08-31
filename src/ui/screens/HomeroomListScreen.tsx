@@ -7,19 +7,20 @@
 import { useState } from 'react';
 import { NO_HOMEROOM, type Homeroom, type HistoryState } from '../../domain/types';
 import { RoundMeter } from '../components/RoundMeter';
-import { winForHomeroomThisWeek } from '../../app/session';
+import { winForHomeroomThisMonth } from '../../app/session';
+import { monthLabelFor } from '../../domain/monthKey';
 
 interface Props {
   homerooms: Homeroom[];
   history: HistoryState;
-  weekKey: string;
+  monthKey: string;
   onDraw: (homeroom: Homeroom) => void;
 }
 
-export function HomeroomListScreen({ homerooms, history, weekKey, onDraw }: Props) {
+export function HomeroomListScreen({ homerooms, history, monthKey, onDraw }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const drawn = homerooms.filter((h) => winForHomeroomThisWeek(history, h.name, weekKey)).length;
+  const drawn = homerooms.filter((h) => winForHomeroomThisMonth(history, h.name, monthKey)).length;
   const drawable = homerooms.filter((h) => h.candidates.length > 0).length;
 
   return (
@@ -27,14 +28,14 @@ export function HomeroomListScreen({ homerooms, history, weekKey, onDraw }: Prop
       <div>
         <h2>Homerooms</h2>
         <p className="lede">
-          {drawn} of {homerooms.length} drawn this week · {drawable} ready to draw. Pick a homeroom to
-          start its drawing.
+          {monthLabelFor(monthKey)} · {drawn} of {homerooms.length} drawn · {drawable} ready to
+          draw. Pick a homeroom to start its drawing.
         </p>
       </div>
 
       <div className="grid">
         {homerooms.map((homeroom) => {
-          const win = winForHomeroomThisWeek(history, homeroom.name, weekKey);
+          const win = winForHomeroomThisMonth(history, homeroom.name, monthKey);
           const empty = homeroom.candidates.length === 0;
           const classes = [
             'homeroom',
@@ -52,7 +53,7 @@ export function HomeroomListScreen({ homerooms, history, weekKey, onDraw }: Prop
               {win ? (
                 <div className="winner">🎉 {win.studentName}</div>
               ) : empty ? (
-                <div className="meta">No one can win this week</div>
+                <div className="meta">No one can win this month</div>
               ) : (
                 <div className="meta">
                   {homeroom.candidates.length} can win · {homeroom.students.length} in the class
@@ -87,10 +88,10 @@ export function HomeroomListScreen({ homerooms, history, weekKey, onDraw }: Prop
                       ))}
                     </ol>
                   ) : (
-                    <p className="small muted">Nobody in this homeroom can win this week.</p>
+                    <p className="small muted">Nobody in this homeroom can win this month.</p>
                   )}
                   <p className="small muted">
-                    {homeroom.blockedByOverdue.length} with an overdue book ·{' '}
+                    {homeroom.blockedByOverdue.length} with an overdue book this month ·{' '}
                     {homeroom.alreadyWonThisRound.length} already had a turn this round
                   </p>
                 </div>

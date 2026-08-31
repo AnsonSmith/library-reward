@@ -1,7 +1,7 @@
 {
   "name": "Library Reward",
   "short_name": "Library Reward",
-  "description": "Weekly homeroom prize drawing for the school library",
+  "description": "Monthly homeroom prize drawing for the school library",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
