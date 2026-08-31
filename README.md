@@ -132,6 +132,17 @@ icons) and nothing else; the offline build has no external references at all.
 `scripts/check-single-file.mjs` enforces both shapes, and
 `tests/integration/buildOutputs.test.ts` fails if either drifts.
 
+### The hosted build is live
+
+**https://ansonsmith.github.io/library-reward/**
+
+Use that URL, not the `ansonsmith.com` one GitHub reports. This account has a
+user-level custom domain, so the Pages API advertises
+`http://ansonsmith.com/library-reward/` — but that domain has no certificate, so
+it only answers over plain HTTP. This app needs a secure context: service workers
+refuse to register over HTTP, and so does "Install page as app". The `github.io`
+address serves the same bytes over HTTPS today.
+
 ### Publishing the hosted build
 
 `.github/workflows/deploy.yml` runs lint, tests, and both builds, then publishes
