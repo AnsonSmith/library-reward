@@ -140,27 +140,28 @@ icons) and nothing else; the offline build has no external references at all.
 
 The workflow refuses to publish if any `.xlsx` file is tracked in the repository.
 
-### Before this repo goes anywhere
+### Student data and this repository
 
-**The two spreadsheet exports are committed in the root commit** (`24b0217`) and
-contain roughly a thousand children's names and library barcodes. `.gitignore`
-does not help — the files are already tracked, and ignore rules do not apply to
-tracked files.
+**Done:** the two spreadsheet exports were purged from git history on 2026-08-30.
+They had been committed in the original root commit and contained roughly a
+thousand children's names and library barcodes. History was rewritten with
+`git filter-branch`, the backup refs and reflog were expunged, and the objects
+were garbage-collected. Nothing matching `*.xlsx` remains in any commit or in the
+object store.
 
-GitHub Pages on a free plan requires a **public** repository, so publishing this
-repo as-is would publish that data. Before pushing anywhere:
+The files still sit in the working directory, where the weekly routine needs
+them, and `.gitignore` now keeps them untracked. Verify at any time:
 
 ```bash
-# Stop tracking them (they stay on disk, and .gitignore covers them from now on)
-git rm --cached PatronNameListJob829811.xlsx PatronCircReportJob829808.xlsx
-git commit -m "Stop tracking student roster exports"
-
-# Then remove them from history as well — they are in the root commit
-pipx run git-filter-repo --invert-paths --path PatronNameListJob829811.xlsx --path PatronCircReportJob829808.xlsx
+git rev-list --objects --all | grep -i '\.xlsx$'   # expect no output
+git ls-files | grep -i '\.xlsx$'                   # expect no output
 ```
 
-Alternatively, keep this repository private and publish only the built page from a
-separate public repository containing nothing but `dist-web/`.
+`.github/workflows/deploy.yml` refuses to publish if either check ever starts
+producing output, so a future accidental `git add` cannot reach GitHub Pages.
+
+Keep it that way: the weekly exports belong on disk and in Google Drive, never in
+a commit.
 
 ### Documentation
 

@@ -4,9 +4,10 @@ name: Deploy to GitHub Pages
 # (npm run build) stays the primary delivery; this exists for when local storage
 # on file:// turns out to be unreliable, or when updating by hand becomes a chore.
 #
-# NOTE: GitHub Pages on a free plan requires a PUBLIC repository. Do not enable
-# this until the student roster files have been purged from git history — see
-# README.md, "Before this repo goes anywhere".
+# NOTE: GitHub Pages on a free plan requires a PUBLIC repository. The student
+# roster exports were purged from history on 2026-08-30; the guard below is what
+# keeps them from ever coming back. See README.md, "Student data and this
+# repository".
 
 on:
   push:
