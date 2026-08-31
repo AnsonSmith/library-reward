@@ -1,6 +1,10 @@
 /**
  * Decide which selected file is which, by content rather than by file name —
  * the exports carry a job number that changes every week (FR-003, FR-004).
+ *
+ * A monthly drawing is fed one roster and however many weekly circulation reports
+ * the month produced, chosen in any order. Sorting them out by their headers is
+ * what lets the librarian select the whole folder and not think about it.
  */
 import type { SheetRow } from './xlsxReader';
 import { buildHeaderMap, checkRequired, hasHeaders, type HeaderMap } from './headerMap';
@@ -39,49 +43,72 @@ export interface NamedSheet {
   fileName: string;
 }
 
-export interface PairedFile extends IdentifiedFile {
+export interface ClassifiedFile extends IdentifiedFile {
   fileName: string;
 }
 
-export type PairResult =
-  | { ok: true; roster: PairedFile; circulation: PairedFile; swapped: boolean }
+export type ClassifyResult =
+  | { ok: true; roster: ClassifiedFile; circulation: ClassifiedFile[] }
   | { ok: false; problem: string };
 
+function list(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
 /**
- * Pair two selected files into roles. A swapped selection is corrected rather
- * than rejected — but the caller is told, so nothing happens invisibly.
+ * Sort any number of selected files into one roster and the month's circulation
+ * reports. Selection order carries no meaning, so nothing here depends on it.
  */
-export function pairReports(a: NamedSheet, b: NamedSheet): PairResult {
-  const ia: PairedFile = { ...identifyReport(a.rows), fileName: a.fileName };
-  const ib: PairedFile = { ...identifyReport(b.rows), fileName: b.fileName };
+export function classifyReports(sheets: NamedSheet[]): ClassifyResult {
+  const classified: ClassifiedFile[] = sheets.map((s) => ({
+    ...identifyReport(s.rows),
+    fileName: s.fileName,
+  }));
 
-  const unknown = [ia, ib].filter((f) => f.role === 'unknown');
+  const unknown = classified.filter((f) => f.role === 'unknown');
   if (unknown.length > 0) {
-    const names = unknown.map((f) => f.fileName).join(' and ');
+    const names = list(unknown.map((f) => f.fileName));
     return {
       ok: false,
-      problem: `${names} ${unknown.length > 1 ? 'are' : 'is'} not one of the two library reports. The roster needs "Patron Type" and "Homeroom" columns; the circulation report needs "Patron Barcode" and "Due" columns.`,
+      problem: `${names} ${unknown.length > 1 ? 'are' : 'is'} not one of the library reports. The roster needs "Patron Type" and "Homeroom" columns; a circulation report needs "Patron Barcode" and "Due" columns.`,
     };
   }
 
-  if (ia.role === ib.role) {
-    const wanted = ia.role === 'roster' ? 'circulation report' : 'student roster';
+  const rosters = classified.filter((f) => f.role === 'roster');
+  const circulation = classified.filter((f) => f.role === 'circulation');
+
+  if (rosters.length === 0) {
     return {
       ok: false,
-      problem: `Both files look like the ${ia.role === 'roster' ? 'student roster' : 'circulation report'}. Please choose the ${wanted} as well.`,
+      problem:
+        'None of those files is the student roster. Add the roster export — the one with "Patron Type" and "Homeroom" columns.',
+    };
+  }
+  if (rosters.length > 1) {
+    return {
+      ok: false,
+      problem: `${list(rosters.map((f) => f.fileName))} all look like the student roster. Choose one roster, plus this month's circulation reports.`,
+    };
+  }
+  if (circulation.length === 0) {
+    return {
+      ok: false,
+      problem:
+        "Add at least one circulation report. Every weekly report you add to the pile keeps that week's overdue books out of the monthly drawing.",
     };
   }
 
-  const roster = ia.role === 'roster' ? ia : ib;
-  const circulation = ia.role === 'circulation' ? ia : ib;
-
+  const roster = rosters[0]!;
   const missing = [
     ...roster.missing.map((h) => `"${h}" in the roster (${roster.fileName})`),
-    ...circulation.missing.map((h) => `"${h}" in the circulation report (${circulation.fileName})`),
+    ...circulation.flatMap((c) =>
+      c.missing.map((h) => `"${h}" in the circulation report ${c.fileName}`),
+    ),
   ];
   if (missing.length > 0) {
     return { ok: false, problem: `Missing required columns: ${missing.join('; ')}.` };
   }
 
-  return { ok: true, roster, circulation, swapped: ia.role === 'circulation' };
+  return { ok: true, roster, circulation };
 }

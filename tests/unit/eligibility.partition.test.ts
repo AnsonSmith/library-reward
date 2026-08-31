@@ -21,6 +21,7 @@ function student(over: Partial<RosterEntry> & { barcode: string }): RosterEntry 
 }
 function circ(barcode: string, over: Partial<CirculationRow> = {}): CirculationRow {
   return {
+    sourceFile: 'circ.xlsx',
     displayName: 'x',
     barcode,
     matchKey: normalizeBarcode(barcode),
@@ -54,8 +55,8 @@ describe('import summary conservation', () => {
       history: [],
       rounds: [],
       today: TODAY,
+      circulationFileNames: ['c.xlsx'],
       rosterFileName: 'r.xlsx',
-      circulationFileName: 'c.xlsx',
     });
 
     const placed = homerooms.reduce((n, h) => n + h.students.length, 0);
@@ -84,8 +85,8 @@ describe('import summary conservation', () => {
       history: [],
       rounds: [],
       today: TODAY,
+      circulationFileNames: ['c.xlsx'],
       rosterFileName: 'r.xlsx',
-      circulationFileName: 'c.xlsx',
     });
 
     const c = summary.countsByReason;
@@ -106,8 +107,8 @@ describe('import summary conservation', () => {
       history: [],
       rounds: [],
       today: TODAY,
+      circulationFileNames: ['c.xlsx'],
       rosterFileName: 'r.xlsx',
-      circulationFileName: 'c.xlsx',
     });
     const faculty = summary.setAside.find((s) => s.reason === 'faculty');
     const ghost = summary.setAside.find((s) => s.reason === 'unmatchedCirculation');
@@ -124,8 +125,8 @@ describe('import summary conservation', () => {
       history: [],
       rounds: [],
       today: TODAY,
+      circulationFileNames: ['c.xlsx'],
       rosterFileName: 'r.xlsx',
-      circulationFileName: 'c.xlsx',
     });
     expect(summary.overdueRowsFound).toBe(0);
     expect(homerooms[0]!.candidates).toHaveLength(2);

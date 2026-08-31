@@ -3,7 +3,7 @@
  *
  * Two lifetimes exist and must not be confused:
  *  - Session data (roster, circulation, homerooms) lives in memory only.
- *  - Persistent data (WinRecord, RoundState, Settings) survives across weeks.
+ *  - Persistent data (WinRecord, RoundState, Settings) survives across months.
  */
 
 /** A calendar day with no time component, so a book due at 3pm is not "overdue" at 9am. */
@@ -33,6 +33,9 @@ export interface RosterEntry {
 }
 
 export interface CirculationRow {
+  /** Which uploaded report this row came from. A month's rows are pooled, so a
+   *  row with no file name behind it could not be traced back for the librarian. */
+  sourceFile: string;
   displayName: string;
   barcode: string;
   matchKey: string;
@@ -48,7 +51,7 @@ export interface CirculationRow {
 
 export type OverdueVerdict = 'overdue' | 'notOverdue' | 'undeterminable';
 
-export type HomeroomState = 'drawable' | 'noCandidates' | 'drawnThisWeek';
+export type HomeroomState = 'drawable' | 'noCandidates' | 'drawnThisMonth';
 
 export interface Homeroom {
   name: string;
@@ -56,7 +59,8 @@ export interface Homeroom {
   students: RosterEntry[];
   /** Students minus overdue holders minus current-round winners. */
   candidates: RosterEntry[];
-  /** Never rendered on a class-facing screen. */
+  /** Blocked by an overdue item in ANY of the month's reports. Never rendered on
+   *  a class-facing screen. */
   blockedByOverdue: RosterEntry[];
   /** Never rendered on a class-facing screen. */
   alreadyWonThisRound: RosterEntry[];
@@ -72,6 +76,8 @@ export interface SetAsideRow {
   barcode: string;
   detail: string | null;
   sourceRow: number;
+  /** The report this row came from; null for roster rows, which have only one source. */
+  sourceFile: string | null;
 }
 
 export type SetAsideReason =
@@ -84,14 +90,26 @@ export type SetAsideReason =
   | 'nonOverdue'
   | 'undeterminableDueDate';
 
+/** Per-report totals, so a report exported without due dates stands out from the rest. */
+export interface CirculationFileSummary {
+  fileName: string;
+  rowsRead: number;
+  overdueRowsFound: number;
+  /** Students newly disqualified by this report and no earlier one. */
+  studentsFirstBlockedHere: number;
+}
+
 export interface ImportSummary {
   rosterFileName: string;
-  circulationFileName: string;
+  /** Every circulation report in this month's pool, in the order they were read. */
+  circulationFiles: CirculationFileSummary[];
   importedAt: string;
   rosterRowsRead: number;
   circulationRowsRead: number;
-  /** The number that tells the librarian whether the right report was exported. */
+  /** The number that tells the librarian whether the right reports were exported. */
   overdueRowsFound: number;
+  /** Distinct students held out of the drawing by an overdue item in any report. */
+  studentsBlockedByOverdue: number;
   activeStudents: number;
   homeroomCount: number;
   setAside: SetAsideRow[];
@@ -107,8 +125,8 @@ export interface WinRecord {
   /** Snapshot for display; the roster may later change. */
   studentName: string;
   drawnOn: CalendarDate;
-  /** ISO week, e.g. '2026-W36'. */
-  weekKey: string;
+  /** Calendar month, e.g. '2026-09'. One win per homeroom per month. */
+  monthKey: string;
   candidatePoolSize: number;
 }
 

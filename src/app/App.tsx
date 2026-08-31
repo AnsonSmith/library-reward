@@ -7,7 +7,7 @@
  * duplicated state to reconcile.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { weekKeyFor } from '../domain/weekKey';
+import { monthKeyFor, monthLabelFor } from '../domain/monthKey';
 import { todayLocal } from '../parsing/excelDate';
 import type { HistoryState, Homeroom, RosterEntry, WinRecord } from '../domain/types';
 import {
@@ -22,9 +22,9 @@ import {
   rederive,
   recordWin,
   removeWin,
-  winForHomeroomThisWeek,
-  winsForWeek,
-  type WeekSession,
+  winForHomeroomThisMonth,
+  winsForMonth,
+  type DrawingSession,
 } from './session';
 import { ImportScreen } from '../ui/screens/ImportScreen';
 import { HomeroomListScreen } from '../ui/screens/HomeroomListScreen';
@@ -55,7 +55,7 @@ function csvCell(value: string): string {
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>(() => loadHistory());
-  const [session, setSession] = useState<WeekSession | null>(null);
+  const [session, setSession] = useState<DrawingSession | null>(null);
   const [screen, setScreen] = useState<Screen>('import');
   const [selected, setSelected] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: 'good' | 'problem'; text: string } | null>(null);
@@ -77,7 +77,7 @@ export function App() {
     }
   }, []);
 
-  const weekKey = useMemo(() => weekKeyFor(session?.today ?? todayLocal()), [session]);
+  const monthKey = useMemo(() => monthKeyFor(session?.today ?? todayLocal()), [session]);
 
   // Honour the device setting as well as the app's own, so a Chromebook configured
   // for reduced motion gets the shorter build-up without anyone changing a setting.
@@ -91,7 +91,7 @@ export function App() {
   const selectedHomeroom: Homeroom | null =
     homerooms.find((h) => h.name === selected) ?? null;
 
-  const handleLoaded = (loaded: WeekSession): void => {
+  const handleLoaded = (loaded: DrawingSession): void => {
     setSession(loaded);
     setMessage(null);
   };
@@ -155,23 +155,29 @@ export function App() {
 
     persist(incoming);
     setSession(session ? rederive(session, incoming) : null);
+    const notes = [
+      result.migratedFromWeekly
+        ? 'Winners from the weekly version were filed under the month they were drawn in.'
+        : null,
+      result.roundsRebuilt ? 'Round numbers were rebuilt from the list of winners.' : null,
+    ].filter(Boolean);
     setMessage({
       kind: 'good',
-      text: result.roundsRebuilt
-        ? 'Backup loaded. Round numbers were rebuilt from the list of winners.'
-        : 'Backup loaded.',
+      text: ['Backup loaded.', ...notes].join(' '),
     });
   };
 
   const exportWinnersCsv = (): void => {
-    const rows = winsForWeek(history, weekKey).sort((a, b) => a.homeroom.localeCompare(b.homeroom));
+    const rows = winsForMonth(history, monthKey).sort((a, b) =>
+      a.homeroom.localeCompare(b.homeroom),
+    );
     const csv = [
-      ['Homeroom', 'Winner', 'Date drawn', 'Week'].join(','),
+      ['Homeroom', 'Winner', 'Date drawn', 'Month'].join(','),
       ...rows.map((w) =>
-        [w.homeroom, w.studentName, w.drawnOn, w.weekKey].map(csvCell).join(','),
+        [w.homeroom, w.studentName, w.drawnOn, monthLabelFor(w.monthKey)].map(csvCell).join(','),
       ),
     ].join('\n');
-    downloadFile(`library-reward-winners-${weekKey}.csv`, csv, 'text/csv');
+    downloadFile(`library-reward-winners-${monthKey}.csv`, csv, 'text/csv');
   };
 
   const clearYear = (): void => {
@@ -201,7 +207,7 @@ export function App() {
     setMessage({ kind: 'good', text: 'Everything has been erased from this Chromebook.' });
   };
 
-  const drawnThisWeek = winsForWeek(history, weekKey).length;
+  const drawnThisMonth = winsForMonth(history, monthKey).length;
 
   return (
     <div className="app">
@@ -225,7 +231,7 @@ export function App() {
             onClick={() => setScreen('winners')}
             disabled={!session && history.wins.length === 0}
           >
-            Winners{drawnThisWeek > 0 ? ` (${drawnThisWeek})` : ''}
+            Winners{drawnThisMonth > 0 ? ` (${drawnThisMonth})` : ''}
           </button>
           <button
             aria-current={screen === 'quality'}
@@ -255,7 +261,7 @@ export function App() {
         {!storage.available && screen !== 'settings' && (
           <div className="notice problem no-print" style={{ marginBottom: '1rem' }}>
             This Chromebook is not saving anything between sessions. Use the backup file on the
-            Backup screen, or the turn-taking will reset each week.
+            Backup screen, or the turn-taking will reset each month.
           </div>
         )}
 
@@ -273,7 +279,7 @@ export function App() {
           <HomeroomListScreen
             homerooms={homerooms}
             history={history}
-            weekKey={weekKey}
+            monthKey={monthKey}
             onDraw={handleDraw}
           />
         )}
@@ -281,7 +287,7 @@ export function App() {
         {screen === 'draw' && selectedHomeroom && (
           <DrawScreen
             homeroom={selectedHomeroom}
-            existingWin={winForHomeroomThisWeek(history, selectedHomeroom.name, weekKey)}
+            existingWin={winForHomeroomThisMonth(history, selectedHomeroom.name, monthKey)}
             reduced={reducedMotion}
             onRecord={handleRecord}
             onBack={() => setScreen('homerooms')}
@@ -292,7 +298,7 @@ export function App() {
           <WinnersScreen
             history={history}
             homerooms={homerooms}
-            weekKey={weekKey}
+            monthKey={monthKey}
             onExport={exportWinnersCsv}
             onRemoveWin={handleRemoveWin}
           />

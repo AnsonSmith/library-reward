@@ -8,7 +8,7 @@ import type { ImportSummary, SetAsideReason } from '../../domain/types';
 
 const LABELS: Record<SetAsideReason, { title: string; blurb: string }> = {
   unmatchedCirculation: {
-    title: 'On the circulation report, but not on the roster',
+    title: 'On a circulation report, but not on the roster',
     blurb:
       'These rows could not be matched to a student. If one of them is a current student, they may be in a drawing they should not be in.',
   },
@@ -55,18 +55,20 @@ export function DataQualityScreen({ summary }: { summary: ImportSummary }) {
       <div>
         <h2>What was set aside</h2>
         <p className="lede">
-          Every row from both files is accounted for here. Nothing was quietly dropped.
+          Every row from every file is accounted for here, and each one names the report it came
+          from. Nothing was quietly dropped.
         </p>
       </div>
 
       {summary.overdueRowsFound === 0 && (
         <div className="notice">
-          <h3>Zero overdue items were found this week</h3>
+          <h3>Zero overdue items were found this month</h3>
           <p>
-            The circulation report had {summary.circulationRowsRead} rows, and none of them was a
-            book that is past its due date. Either everyone has returned their books, or the report
-            was exported without checked-out items and their due dates — worth a look before you
-            hand out prizes.
+            The {summary.circulationFiles.length} circulation report
+            {summary.circulationFiles.length === 1 ? '' : 's'} had {summary.circulationRowsRead}{' '}
+            rows between them, and none of them was a book that is past its due date. Either
+            everyone has returned their books, or the reports were exported without checked-out
+            items and their due dates — worth a look before you hand out prizes.
           </p>
         </div>
       )}
@@ -87,15 +89,17 @@ export function DataQualityScreen({ summary }: { summary: ImportSummary }) {
                   <th>Name</th>
                   <th>Barcode</th>
                   <th>Detail</th>
+                  <th>Report</th>
                   <th>Row</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.slice(0, 200).map((row, i) => (
-                  <tr key={`${row.barcode}-${row.sourceRow}-${i}`}>
+                  <tr key={`${row.sourceFile ?? 'roster'}-${row.barcode}-${row.sourceRow}-${i}`}>
                     <td>{row.displayName || <span className="muted">(no name)</span>}</td>
                     <td className="small">{row.barcode || <span className="muted">(none)</span>}</td>
                     <td className="small">{row.detail ?? ''}</td>
+                    <td className="small muted">{row.sourceFile ?? summary.rosterFileName}</td>
                     <td className="small muted">{row.sourceRow}</td>
                   </tr>
                 ))}

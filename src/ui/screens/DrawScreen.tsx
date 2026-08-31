@@ -2,7 +2,7 @@
  * The moment the whole app exists for.
  *
  * The reveal is given only this homeroom's candidates, so a child who cannot win
- * this week is never rendered on the screen the class is watching, and no reason
+ * this month is never rendered on the screen the class is watching, and no reason
  * for their absence is ever displayed (FR-020, FR-031).
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -70,11 +70,11 @@ export function DrawScreen({ homeroom, existingWin, reduced, onRecord, onBack }:
           <div className="homeroom-label">{homeroom.name}</div>
           <div className="namecard">
             <div className="who" style={{ fontSize: 'clamp(1.6rem, 4vw, 2.6rem)' }}>
-              No drawing this week
+              No drawing this month
             </div>
           </div>
           <p className="lede" style={{ textAlign: 'center' }}>
-            Everyone in this class will be back in the drawing next week.
+            Everyone in this class will be back in the drawing next month.
           </p>
         </div>
       </div>
@@ -88,7 +88,7 @@ export function DrawScreen({ homeroom, existingWin, reduced, onRecord, onBack }:
           ← All homerooms
         </button>
         {existingWin && phase === 'idle' && !confirmReplace && (
-          <span className="tag">Already drawn this week: {existingWin.studentName}</span>
+          <span className="tag">Already drawn this month: {existingWin.studentName}</span>
         )}
       </div>
 
@@ -115,17 +115,17 @@ export function DrawScreen({ homeroom, existingWin, reduced, onRecord, onBack }:
             </button>
             <p className="muted">
               {candidates.length === 1
-                ? 'One child can win this week.'
-                : `${candidates.length} children can win this week.`}
+                ? 'One child can win this month.'
+                : `${candidates.length} children can win this month.`}
             </p>
           </div>
         )}
 
         {phase === 'idle' && confirmReplace && (
           <div className="notice problem no-print" style={{ maxWidth: '34rem' }}>
-            <h3>Replace this week's winner?</h3>
+            <h3>Replace this month's winner?</h3>
             <p>
-              {existingWin?.studentName} was already drawn for {homeroom.name} this week. Drawing
+              {existingWin?.studentName} was already drawn for {homeroom.name} this month. Drawing
               again will replace them, and they will go back to waiting for a turn.
             </p>
             <div className="row" style={{ marginTop: '0.75rem' }}>
@@ -154,7 +154,7 @@ export function DrawScreen({ homeroom, existingWin, reduced, onRecord, onBack }:
         {phase === 'won' && (
           <div className="stack no-print" style={{ alignItems: 'center' }}>
             {candidates.length === 1 && (
-              <p className="muted">This was the only child who could win this week.</p>
+              <p className="muted">This was the only child who could win this month.</p>
             )}
             {recorded ? (
               <div className="row">

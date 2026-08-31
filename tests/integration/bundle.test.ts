@@ -39,7 +39,7 @@ describe.skipIf(!built)('the built single file', () => {
 
     const text = dom.window.document.body.textContent ?? '';
     expect(text).toContain('Library Reward');
-    expect(text).toContain("This week's two files");
+    expect(text).toContain("This month's files");
 
     dom.window.close();
   });

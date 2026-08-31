@@ -1,7 +1,7 @@
 /**
  * The reveal: names cycle fast, then slow to a stop on the winner.
  *
- * It only ever cycles CANDIDATE names. A child who cannot win this week never
+ * It only ever cycles CANDIDATE names. A child who cannot win this month never
  * appears on the screen the class is watching (FR-031) — that is a property of
  * what this component is given, not of remembering to hide something.
  *

@@ -18,7 +18,7 @@ function win(over: Partial<WinRecord> = {}): WinRecord {
     studentMatchKey: '100001',
     studentName: 'Doe, Jane A',
     drawnOn: '2026-09-04',
-    weekKey: '2026-W36',
+    monthKey: '2026-09',
     candidatePoolSize: 22,
     ...over,
   };
@@ -133,5 +133,73 @@ describe('round reconstruction', () => {
     if (!result.ok) return;
     expect(result.roundsRebuilt).toBe(false);
     expect(result.history.rounds[0]!.startedOn).toBe('2026-11-14');
+  });
+});
+
+describe('reading a backup from the weekly version of the app', () => {
+  /** A v1 file: `weekKey` on every win, and no `monthKey`. */
+  function v1(wins: Record<string, unknown>[]): string {
+    return JSON.stringify({
+      format: 'library-reward-history',
+      version: 1,
+      schoolYearLabel: '2026-2027',
+      exportedOn: '2026-09-25',
+      rounds: [{ homeroom: 'Marigold, Rita', currentRound: 1, startedOn: '2026-09-01' }],
+      wins,
+    });
+  }
+
+  function v1Win(over: Record<string, unknown> = {}): Record<string, unknown> {
+    const { monthKey, ...rest } = win();
+    expect(monthKey).toBeTypeOf('string'); // the field a v1 file is missing
+    return { ...rest, weekKey: '2026-W36', ...over };
+  }
+
+  it('files each win under the month it was drawn in', () => {
+    const result = parseBackup(v1([v1Win({ id: 'a', drawnOn: '2026-09-04' })]), TODAY, defaultSettings());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.migratedFromWeekly).toBe(true);
+    expect(result.history.wins[0]!.monthKey).toBe('2026-09');
+    expect(result.history.wins[0]).not.toHaveProperty('weekKey');
+  });
+
+  it('keeps every weekly win, so turn-taking survives the upgrade', () => {
+    // Four weekly drawings in one month. Under the new rule a month holds one
+    // winner, but these turns were really taken — dropping any would put a
+    // student back in a round they have already had.
+    const wins = [
+      v1Win({ id: 'a', studentMatchKey: '1', drawnOn: '2026-09-04', weekKey: '2026-W36' }),
+      v1Win({ id: 'b', studentMatchKey: '2', drawnOn: '2026-09-11', weekKey: '2026-W37' }),
+      v1Win({ id: 'c', studentMatchKey: '3', drawnOn: '2026-09-18', weekKey: '2026-W38' }),
+      v1Win({ id: 'd', studentMatchKey: '4', drawnOn: '2026-10-02', weekKey: '2026-W40' }),
+    ];
+    const result = parseBackup(v1(wins), TODAY, defaultSettings());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.history.wins).toHaveLength(4);
+    expect(result.history.wins.map((w) => w.monthKey)).toEqual([
+      '2026-09',
+      '2026-09',
+      '2026-09',
+      '2026-10',
+    ]);
+    expect(new Set(result.history.wins.map((w) => w.studentMatchKey)).size).toBe(4);
+  });
+
+  it('does not claim a migration for a file that is already monthly', () => {
+    const result = parseBackup(serializeBackup(state(), TODAY), TODAY, defaultSettings());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFromWeekly).toBe(false);
+  });
+
+  it('still refuses a win record with neither a month nor a week', () => {
+    const noPeriod = v1Win();
+    delete noPeriod.weekKey;
+    const result = parseBackup(v1([noPeriod]), TODAY, defaultSettings());
+    expect(result.ok).toBe(false);
   });
 });

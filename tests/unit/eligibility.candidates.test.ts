@@ -23,6 +23,7 @@ function student(over: Partial<RosterEntry> & { barcode: string }): RosterEntry 
 
 function circ(barcode: string, over: Partial<CirculationRow> = {}): CirculationRow {
   return {
+    sourceFile: 'circ.xlsx',
     displayName: 'x',
     barcode,
     matchKey: normalizeBarcode(barcode),
@@ -47,8 +48,8 @@ function build(
     history,
     rounds: [],
     today: TODAY,
+    circulationFileNames: ['circ.xlsx'],
     rosterFileName: 'roster.xlsx',
-    circulationFileName: 'circ.xlsx',
   });
 }
 
@@ -160,7 +161,7 @@ describe('buildHomerooms candidate derivation', () => {
       studentMatchKey: '2',
       studentName: 'Winner',
       drawnOn: '2026-02-20',
-      weekKey: '2026-W08',
+      monthKey: '2026-02',
       candidatePoolSize: 2,
     };
     const { homerooms } = build(

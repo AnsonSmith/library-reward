@@ -1,26 +1,27 @@
-/** This week's winners, ready to print or hand to teachers (FR-033, FR-036). */
+/** This month's winners, ready to print or hand to teachers (FR-033, FR-036). */
 import type { HistoryState, Homeroom } from '../../domain/types';
-import { winsForWeek } from '../../app/session';
+import { winsForMonth } from '../../app/session';
+import { monthLabelFor } from '../../domain/monthKey';
 
 interface Props {
   history: HistoryState;
   homerooms: Homeroom[];
-  weekKey: string;
+  monthKey: string;
   onExport: () => void;
   onRemoveWin: (winId: string) => void;
 }
 
-export function WinnersScreen({ history, homerooms, weekKey, onExport, onRemoveWin }: Props) {
-  const wins = winsForWeek(history, weekKey).sort((a, b) => a.homeroom.localeCompare(b.homeroom));
+export function WinnersScreen({ history, homerooms, monthKey, onExport, onRemoveWin }: Props) {
+  const wins = winsForMonth(history, monthKey).sort((a, b) => a.homeroom.localeCompare(b.homeroom));
   const drawnNames = new Set(wins.map((w) => w.homeroom));
   const pending = homerooms.filter((h) => !drawnNames.has(h.name));
 
   return (
     <div className="stack">
       <div>
-        <h2>This week's winners</h2>
+        <h2>This month's winners</h2>
         <p className="lede">
-          {wins.length} drawn · {pending.length} still to go ({weekKey})
+          {wins.length} drawn · {pending.length} still to go ({monthLabelFor(monthKey)})
         </p>
       </div>
 
@@ -34,7 +35,7 @@ export function WinnersScreen({ history, homerooms, weekKey, onExport, onRemoveW
       </div>
 
       {wins.length === 0 ? (
-        <div className="notice">No drawings yet this week.</div>
+        <div className="notice">No drawings yet this month.</div>
       ) : (
         <div className="card">
           <table>
@@ -77,7 +78,7 @@ export function WinnersScreen({ history, homerooms, weekKey, onExport, onRemoveW
             {pending.map((h) => (
               <li key={h.name}>
                 {h.name}
-                {h.candidates.length === 0 ? ' — nobody can win this week' : ''}
+                {h.candidates.length === 0 ? ' — nobody can win this month' : ''}
               </li>
             ))}
           </ul>

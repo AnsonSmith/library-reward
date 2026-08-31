@@ -1,14 +1,19 @@
 # Library Reward
 
-A weekly prize drawing for an elementary school library. Each week it takes the two
-spreadsheets exported from the library system, works out which children in each
-homeroom can win, and runs a playful animated drawing in front of the class.
+A monthly prize drawing for an elementary school library. Once a month it takes the
+roster plus that month's weekly circulation reports, works out which children in
+each homeroom can win, and runs a playful animated drawing in front of the class.
 
-Two rules decide who can win:
+Three rules decide who can win:
 
 1. **Only a genuinely overdue book keeps a child out.** Fines, lost-book charges,
    and refunds do not.
-2. **Everyone gets a turn before anyone repeats.** Once a child wins, they sit out
+2. **One overdue book anywhere in the month costs the whole month.** You give the
+   app every weekly circulation report from the month; a child who appears overdue
+   in *any* of them sits out that month's drawing, even if a later report shows the
+   book back on the shelf. Returning it late doesn't un-ring the bell — but it
+   costs them that month only, and they're back in the pool next month.
+3. **Everyone gets a turn before anyone repeats.** Once a child wins, they sit out
    of their homeroom's drawings until every classmate has had a turn; then the
    round starts over and everyone is back in.
 
@@ -24,42 +29,59 @@ network requests of any kind.
 Save `LibraryReward.html` somewhere you can find it — Downloads, or a folder in
 Google Drive. That single file *is* the app.
 
-### Every week
+### Through the month
 
-1. **Export the two reports** from the library system:
-   - the **patron roster** (needs Name, Barcode, Patron Type, Status, Homeroom)
-   - the **circulation report** showing **checked-out items with their due dates**
+**Export the circulation report each week** from the library system, showing
+**checked-out items with their due dates**, and keep the files together in one
+folder. Name them however you like — the app identifies each file by its columns,
+not its name, and the job number in the export's name changes every week anyway.
+
+### On drawing day
+
+1. **Export the patron roster** (needs Name, Barcode, Patron Type, Status,
+   Homeroom). One roster, exported fresh, so it reflects who is in each class now.
 2. **Open `LibraryReward.html`** from the Files app. It opens in Chrome and works
    with no internet.
-3. **Choose the two files.** Either order is fine — the app works out which is
-   which. It then shows you what it read: how many students, how many homerooms,
-   and **how many overdue items it found**.
-4. **Pick a homeroom.** You'll see how many children can win this week and how many
-   are still waiting for their turn this round.
+3. **Choose the files**: the roster, plus every circulation report from the month.
+   Any order, and you can add them a few at a time if they're in different folders.
+   The app then shows you what each file turned out to be, and what it read from
+   them: how many students, how many homerooms, **how many overdue items per
+   report**, and **how many children are sitting this month out**.
+4. **Pick a homeroom.** You'll see how many children can win this month and how
+   many are still waiting for their turn this round.
 5. **Draw.** The names shuffle and slow to a stop on the winner. There's a skip
    button if a class is short on time.
 6. **Work through the homerooms.** Drawn ones are marked; the rest stay on the list.
 7. **Save the backup file** at the end of the session, from the Backup screen, and
    move it into your Google Drive folder.
-8. **Print or export** the week's winners to hand out prizes.
+8. **Print or export** the month's winners to hand out prizes.
+
+If you miss a week's export, the drawing still runs — it just won't know about that
+week's overdue books. The per-report table on the first screen shows you exactly
+which weeks you handed it, so a missing one is visible before you draw.
 
 ### Why the backup file matters
 
 The backup file is what remembers whose turn it is. The app also keeps a copy
 inside the browser, but a school Chromebook can be reset, reimaged, or handed to
 someone else, and that copy would go with it. The backup file is the one you can
-hold on to. Save it every week; it takes one click.
+hold on to. Save it every drawing day; it takes one click.
 
 If the app ever tells you it isn't saving anything between sessions, load the
 backup at the start of each session and save it again at the end.
 
 ### Things the app will tell you instead of hiding
 
-- A homeroom where nobody can win this week.
-- A child on the circulation report who isn't on the roster.
+- A homeroom where nobody can win this month.
+- A child on a circulation report who isn't on the roster.
 - A checked-out book whose due date it couldn't read.
-- **A week where it found zero overdue items** — so you can tell "everyone
+- **A report that came through with no rows in it** — an export that went wrong
+  looks exactly like a quiet week otherwise.
+- **A month where it found zero overdue items** — so you can tell "everyone
   returned their books" apart from "I exported the wrong report".
+
+Everything it sets aside is listed on the "Set aside" screen, and each row names
+the report it came from, so you know which week's export to look at again.
 
 ### What the children never see
 
@@ -82,9 +104,9 @@ npm run build    # -> dist/LibraryReward.html, one self-contained file
 
 | Area | What lives there |
 |---|---|
-| `src/domain/` | Who can win, whose turn it is, who was drawn. Pure functions, no DOM, no clock, no global randomness — "today" and the RNG are injected so the fairness rules are testable. |
+| `src/domain/` | Who can win, whose turn it is, who was drawn. Pure functions, no DOM, no clock, no global randomness — "today" and the RNG are injected so the fairness rules are testable. A drawing period is a calendar month (`monthKey.ts`), derived from the drawing date so nobody has to set it. |
 | `src/parsing/` | Reading `.xlsx` directly (unzip with `fflate`, then `DOMParser`), Excel serial dates, locating columns by header text. |
-| `src/storage/` | `localStorage` plus the versioned JSON backup file. |
+| `src/storage/` | `localStorage` plus the versioned JSON backup file. Backup format v2 stores a `monthKey` per win; v1 files (weekly, `weekKey`) are still read and migrated by the date each win was drawn — see `migrateWins.ts`. |
 | `src/ui/`, `src/app/` | Screens and the one place session state meets persistent history. |
 
 The build emits a **single file with an inline classic script** and no external
@@ -160,8 +182,8 @@ thousand children's names and library barcodes. History was rewritten with
 were garbage-collected. Nothing matching `*.xlsx` remains in any commit or in the
 object store.
 
-The files still sit in the working directory, where the weekly routine needs
-them, and `.gitignore` now keeps them untracked. Verify at any time:
+The files still sit in the working directory, where the routine needs them, and
+`.gitignore` now keeps them untracked. Verify at any time:
 
 ```bash
 git rev-list --objects --all | grep -i '\.xlsx$'   # expect no output
@@ -171,11 +193,13 @@ git ls-files | grep -i '\.xlsx$'                   # expect no output
 `.github/workflows/deploy.yml` refuses to publish if either check ever starts
 producing output, so a future accidental `git add` cannot reach GitHub Pages.
 
-Keep it that way: the weekly exports belong on disk and in Google Drive, never in
-a commit.
+Keep it that way: the exports belong on disk and in Google Drive, never in a
+commit.
 
 ### Documentation
 
 `specs/001-weekly-prize-drawing/` holds the specification, the plan, the research
 decisions, the data model, the contracts for both input files and the backup file,
-and the task list.
+and the task list. It describes the original weekly drawing; the move to monthly
+drawings with pooled circulation reports is documented in
+`specs/002-monthly-prize-drawing/spec.md`.
