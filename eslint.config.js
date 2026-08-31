@@ -2,9 +2,22 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'coverage/', 'tests/fixtures/', 'spike/'] },
+  { ignores: ['dist/', 'dist-web/', 'node_modules/', 'coverage/', 'tests/fixtures/', 'spike/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    // The service worker runs in a worker global scope, not the page.
+    files: ['public-web/sw.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        Promise: 'readonly',
+      },
+    },
+  },
   {
     // Build tooling runs in Node, not in the browser bundle.
     files: ['scripts/**/*.mjs', '*.config.{js,ts}'],

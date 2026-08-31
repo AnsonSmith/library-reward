@@ -25,6 +25,25 @@ function boot(): void {
   );
 }
 
+/**
+ * Offline support exists only in the hosted build. Registering a service worker
+ * from file:// is not possible, and attempting it would throw on the Chromebook
+ * where this app normally runs.
+ */
+function registerServiceWorker(): void {
+  if (!__HOSTED_BUILD__) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+  if (!('serviceWorker' in navigator)) return;
+
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('./sw.js').catch(() => {
+      // Offline support is a bonus; the app works without it.
+    });
+  });
+}
+
+registerServiceWorker();
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot, { once: true });
 } else {

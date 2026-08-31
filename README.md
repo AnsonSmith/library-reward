@@ -103,6 +103,65 @@ Two things that look like details but are not:
   `sharedStrings.xml`. A reader that only handles shared strings reads the whole
   workbook as blank.
 
+### Two ways to deliver it
+
+```bash
+npm run build        # -> dist/LibraryReward.html      (primary: one file, file://)
+npm run build:web    # -> dist-web/                    (fallback: GitHub Pages)
+npm run preview:web  # serve the hosted build locally
+```
+
+Both builds come from the same source and behave identically: everything is
+processed on the device and nothing is ever uploaded. They differ only in how the
+page reaches the Chromebook.
+
+| | Offline single file | Hosted on GitHub Pages |
+|---|---|---|
+| How she gets it | You send her the file; she saves it and double-clicks | She opens a URL once and installs it from Chrome's menu |
+| Storage | `localStorage` on a `file://` origin — **must be verified**, see the spike | A normal `https://` origin, where storage behaves predictably |
+| Offline | Always | After the first visit, via a service worker |
+| Updates | You send a new file; she replaces the old one | Push to `main`; she gets it next time she opens it |
+| Needs internet | Never | Once, to install |
+
+**The offline build is the primary delivery.** The hosted build exists for the
+case where `localStorage` on `file://` turns out to be unreliable on a managed
+Chromebook — for instance where district policy clears browsing data at sign-out.
+
+The hosted build adds exactly four files (`manifest.webmanifest`, `sw.js`, and two
+icons) and nothing else; the offline build has no external references at all.
+`scripts/check-single-file.mjs` enforces both shapes, and
+`tests/integration/buildOutputs.test.ts` fails if either drifts.
+
+### Publishing the hosted build
+
+`.github/workflows/deploy.yml` runs lint, tests, and both builds, then publishes
+`dist-web/` to GitHub Pages on a push to `main`. Enable it under
+**Settings → Pages → Source: GitHub Actions**.
+
+The workflow refuses to publish if any `.xlsx` file is tracked in the repository.
+
+### Before this repo goes anywhere
+
+**The two spreadsheet exports are committed in the root commit** (`24b0217`) and
+contain roughly a thousand children's names and library barcodes. `.gitignore`
+does not help — the files are already tracked, and ignore rules do not apply to
+tracked files.
+
+GitHub Pages on a free plan requires a **public** repository, so publishing this
+repo as-is would publish that data. Before pushing anywhere:
+
+```bash
+# Stop tracking them (they stay on disk, and .gitignore covers them from now on)
+git rm --cached PatronNameListJob829811.xlsx PatronCircReportJob829808.xlsx
+git commit -m "Stop tracking student roster exports"
+
+# Then remove them from history as well — they are in the root commit
+pipx run git-filter-repo --invert-paths --path PatronNameListJob829811.xlsx --path PatronCircReportJob829808.xlsx
+```
+
+Alternatively, keep this repository private and publish only the built page from a
+separate public repository containing nothing but `dist-web/`.
+
 ### Documentation
 
 `specs/001-weekly-prize-drawing/` holds the specification, the plan, the research

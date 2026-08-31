@@ -1,0 +1,59 @@
+name: Deploy to GitHub Pages
+
+# The hosted fallback for the Chromebook. The offline single-file build
+# (npm run build) stays the primary delivery; this exists for when local storage
+# on file:// turns out to be unreliable, or when updating by hand becomes a chore.
+#
+# NOTE: GitHub Pages on a free plan requires a PUBLIC repository. Do not enable
+# this until the student roster files have been purged from git history — see
+# README.md, "Before this repo goes anywhere".
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      # Both builds run: a change that breaks the offline deliverable must not
+      # sail through just because the hosted one still works.
+      - run: npm run build
+      - run: npm run build:web
+      - name: Refuse to publish student data
+        run: |
+          if git ls-files | grep -iE '\.xlsx$'; then
+            echo "::error::Spreadsheet files are tracked in this repository. They contain student names and must not be published."
+            exit 1
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-web
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

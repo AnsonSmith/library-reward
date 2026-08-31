@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "build:web": "tsc -b && VITE_TARGET=web vite build && node scripts/check-single-file.mjs --web",
+    "preview:web": "vite preview --outDir dist-web"
   },
   "dependencies": {
     "fflate": "^0.8.2",
