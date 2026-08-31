@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Storage probe</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 40rem; }
+  .box { padding: 1rem; border-radius: .5rem; margin: 1rem 0; }
+  .ok { background: #e6f5e9; border: 2px solid #2e7d32; }
+  .bad { background: #fdecea; border: 2px solid #c62828; }
+  code { background: #eee; padding: .1rem .3rem; border-radius: .2rem; }
+</style>
+</head>
+<body>
+<h1>Library Reward — storage probe</h1>
+
+<p>This file answers one question: <strong>does this Chromebook remember data
+when the app is opened as a local file?</strong> Everything about "whose turn is
+it" depends on the answer.</p>
+
+<div id="result" class="box">checking…</div>
+
+<h2>What to do</h2>
+<ol>
+  <li>Note the number below.</li>
+  <li>Reload the page (Ctrl+R). The number should be unchanged and the visit count should go up.</li>
+  <li>Close Chrome completely, reopen this file. Still the same number?</li>
+  <li>Restart the Chromebook, reopen this file. Still the same number?</li>
+</ol>
+<p>If the number survives all four, <code>localStorage</code> works here.
+If it resets at any point, tell the developer which step it reset at.</p>
+
+<p><small>Opened from: <code id="loc"></code></small></p>
+
+<script>
+  document.getElementById('loc').textContent = location.protocol;
+  var box = document.getElementById('result');
+  try {
+    var KEY = 'library-reward-probe';
+    var raw = localStorage.getItem(KEY);
+    var state = raw ? JSON.parse(raw) : null;
+    if (!state) {
+      state = { token: Math.floor(Math.random() * 1e9).toString(36), visits: 0, first: new Date().toString() };
+    }
+    state.visits += 1;
+    localStorage.setItem(KEY, JSON.stringify(state));
+    var readBack = JSON.parse(localStorage.getItem(KEY));
+    box.className = 'box ok';
+    box.innerHTML =
+      '<strong>Storage is readable and writable.</strong>' +
+      '<p>Number to watch: <code style="font-size:1.4rem">' + readBack.token + '</code></p>' +
+      '<p>Visits recorded: <strong>' + readBack.visits + '</strong><br>First seen: ' + readBack.first + '</p>' +
+      (readBack.visits === 1 ? '<p><em>This is the first visit — reload to see whether it persists.</em></p>' : '');
+  } catch (err) {
+    box.className = 'box bad';
+    box.innerHTML = '<strong>Storage is NOT available here.</strong><p>' + err + '</p>' +
+      '<p>Report this to the developer — the app will need to keep its history in a backup file instead.</p>';
+  }
+</script>
+</body>
+</html>

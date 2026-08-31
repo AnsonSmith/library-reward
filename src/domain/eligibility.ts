@@ -1,0 +1,227 @@
+/**
+ * Who can win this week.
+ *
+ * This module is the reason the app exists, and the one place where being wrong
+ * is invisible until a child is embarrassed in front of a class. Two rules
+ * matter most, both clarified with the librarian:
+ *
+ *  1. Only a genuinely OVERDUE item disqualifies. Fines, lost-book charges, and
+ *     refunds do not (FR-009).
+ *  2. A student who already won in their homeroom's current round sits out until
+ *     every classmate has had a turn (FR-016).
+ *
+ * Nothing is ever dropped silently: every roster row and every circulation row
+ * ends up either in a homeroom or in a counted, displayable set-aside bucket.
+ */
+import { isBefore } from '../parsing/excelDate';
+import { currentRoundFor, winnersInRound } from './rounds';
+import {
+  NO_HOMEROOM,
+  type CalendarDate,
+  type CirculationRow,
+  type Homeroom,
+  type ImportSummary,
+  type OverdueVerdict,
+  type RosterEntry,
+  type RoundState,
+  type SetAsideReason,
+  type SetAsideRow,
+  type WinRecord,
+} from './types';
+
+/** Transaction wording that claims to be a loan rather than a charge. */
+const CHECKOUT_LIKE = /overdue|checked\s*out|checkout|loan|on\s*loan/i;
+
+/**
+ * A row disqualifies only when it carries a due date that has already passed.
+ * A row that looks like a checkout but has no readable due date is reported as
+ * undeterminable — never quietly treated as fine (FR-011).
+ */
+export function determineOverdue(row: CirculationRow, today: CalendarDate): OverdueVerdict {
+  if (row.dueDate !== null) {
+    return isBefore(row.dueDate, today) ? 'overdue' : 'notOverdue';
+  }
+  // A due-date cell with content we could not read is a question, not an answer.
+  if (row.dueDateRaw.trim() !== '') return 'undeterminable';
+  if (row.transactionType && CHECKOUT_LIKE.test(row.transactionType)) return 'undeterminable';
+  return 'notOverdue';
+}
+
+export interface BuildInput {
+  roster: RosterEntry[];
+  circulation: CirculationRow[];
+  history: WinRecord[];
+  rounds: RoundState[];
+  today: CalendarDate;
+  rosterFileName: string;
+  circulationFileName: string;
+}
+
+export interface BuildResult {
+  homerooms: Homeroom[];
+  summary: ImportSummary;
+}
+
+const EMPTY_COUNTS = (): Record<SetAsideReason, number> => ({
+  faculty: 0,
+  inactive: 0,
+  noHomeroom: 0,
+  duplicateRoster: 0,
+  missingBarcode: 0,
+  unmatchedCirculation: 0,
+  nonOverdue: 0,
+  undeterminableDueDate: 0,
+});
+
+function homeroomNameOf(entry: RosterEntry): string {
+  const raw = entry.homeroom?.trim() ?? '';
+  return raw === '' ? NO_HOMEROOM : raw;
+}
+
+export function buildHomerooms(input: BuildInput): BuildResult {
+  const { roster, circulation, history, rounds, today } = input;
+
+  const setAside: SetAsideRow[] = [];
+  const counts = EMPTY_COUNTS();
+  const note = (
+    reason: SetAsideReason,
+    displayName: string,
+    barcode: string,
+    detail: string | null,
+    sourceRow: number,
+  ): void => {
+    counts[reason] += 1;
+    setAside.push({ reason, displayName, barcode, detail, sourceRow });
+  };
+
+  // --- Circulation: classify every row, then collect the disqualified students.
+  const overdueKeys = new Set<string>();
+  const rosterKeys = new Set(roster.map((r) => r.matchKey).filter((k) => k !== ''));
+  let overdueRowsFound = 0;
+
+  for (const row of circulation) {
+    if (row.matchKey === '' || !rosterKeys.has(row.matchKey)) {
+      note(
+        'unmatchedCirculation',
+        row.displayName,
+        row.barcode,
+        row.itemTitle ?? row.transactionType,
+        row.sourceRow,
+      );
+      continue;
+    }
+    const verdict = determineOverdue(row, today);
+    if (verdict === 'overdue') {
+      overdueRowsFound += 1;
+      overdueKeys.add(row.matchKey);
+    } else if (verdict === 'undeterminable') {
+      note(
+        'undeterminableDueDate',
+        row.displayName,
+        row.barcode,
+        `Due date reads "${row.dueDateRaw.trim() || '(blank)'}"${row.itemTitle ? ` — ${row.itemTitle}` : ''}`,
+        row.sourceRow,
+      );
+    } else {
+      note(
+        'nonOverdue',
+        row.displayName,
+        row.barcode,
+        row.fineReason ?? row.transactionType,
+        row.sourceRow,
+      );
+    }
+  }
+
+  // --- Roster: filter to active students, deduped, grouped by homeroom.
+  const byKey = new Map<string, RosterEntry>();
+  const grouped = new Map<string, RosterEntry[]>();
+
+  for (const entry of roster) {
+    if (entry.matchKey === '') {
+      note('missingBarcode', entry.displayName, entry.barcode, null, entry.sourceRow);
+      continue;
+    }
+    if (entry.patronType !== 'Student') {
+      note('faculty', entry.displayName, entry.barcode, entry.patronType, entry.sourceRow);
+      continue;
+    }
+    if (entry.status !== 'Active') {
+      note('inactive', entry.displayName, entry.barcode, entry.status, entry.sourceRow);
+      continue;
+    }
+
+    const existing = byKey.get(entry.matchKey);
+    if (existing) {
+      // Keep the first active record; a second one is a duplicate either way.
+      note('duplicateRoster', entry.displayName, entry.barcode, 'Same barcode as an earlier row', entry.sourceRow);
+      continue;
+    }
+    byKey.set(entry.matchKey, entry);
+
+    const name = homeroomNameOf(entry);
+    if (name === NO_HOMEROOM) {
+      counts.noHomeroom += 1;
+      setAside.push({
+        reason: 'noHomeroom',
+        displayName: entry.displayName,
+        barcode: entry.barcode,
+        detail: null,
+        sourceRow: entry.sourceRow,
+      });
+    }
+    const bucket = grouped.get(name);
+    if (bucket) bucket.push(entry);
+    else grouped.set(name, [entry]);
+  }
+
+  // --- Assemble homerooms, applying the overdue and turn-taking filters.
+  const homerooms: Homeroom[] = [];
+  for (const [name, students] of grouped) {
+    const currentRound = currentRoundFor(name, rounds);
+    const wonKeys = winnersInRound(name, currentRound, history);
+
+    const blockedByOverdue: RosterEntry[] = [];
+    const alreadyWonThisRound: RosterEntry[] = [];
+    const candidates: RosterEntry[] = [];
+
+    for (const s of students) {
+      if (wonKeys.has(s.matchKey)) alreadyWonThisRound.push(s);
+      else if (overdueKeys.has(s.matchKey)) blockedByOverdue.push(s);
+      else candidates.push(s);
+    }
+
+    homerooms.push({
+      name,
+      students,
+      candidates,
+      blockedByOverdue,
+      alreadyWonThisRound,
+      currentRound,
+      turnsTaken: alreadyWonThisRound.length,
+      turnsRemaining: students.length - alreadyWonThisRound.length,
+    });
+  }
+
+  // Alphabetical, with the unassigned group last so it never looks like a class.
+  homerooms.sort((a, b) => {
+    if (a.name === NO_HOMEROOM) return 1;
+    if (b.name === NO_HOMEROOM) return -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const summary: ImportSummary = {
+    rosterFileName: input.rosterFileName,
+    circulationFileName: input.circulationFileName,
+    importedAt: new Date().toISOString(),
+    rosterRowsRead: roster.length,
+    circulationRowsRead: circulation.length,
+    overdueRowsFound,
+    activeStudents: byKey.size,
+    homeroomCount: homerooms.filter((h) => h.name !== NO_HOMEROOM).length,
+    setAside,
+    countsByReason: counts,
+  };
+
+  return { homerooms, summary };
+}

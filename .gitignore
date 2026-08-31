@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+
+# Live student data — never commit
+/*.xlsx
+
+# TypeScript incremental build state
+*.tsbuildinfo
